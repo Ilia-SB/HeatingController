@@ -164,6 +164,15 @@ void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCoun
 			}
 		}
 	}
+	
+	/************************************************************************/
+	/* Reporting                                                            */
+	/************************************************************************/
+	reportTotalConsumption();
+	for (int i=0; i<NUMBER_OF_HEATERS; i++) {
+		reportTemp(&heaterItems[i]);
+		reportActualState(&heaterItems[i]);
+	}
 }
 
 void processHeaters(int currentConsumption, boolean mode) {
