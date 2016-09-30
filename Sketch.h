@@ -55,6 +55,7 @@ void makeCommand(byte command, byte* address, byte* data, int dataLen, byte* com
 void validateHeater(uint8_t heaterNumber);
 void initPins(void);
 unsigned long elapsedSince(unsigned long);
+void listHeaters(HeaterItem **array, int size);
 
 void reportTemp(HeaterItem *);
 void reportActualState(HeaterItem *);
@@ -62,6 +63,5 @@ void reportTotalConsumption(void);
 
 #ifdef DEBUG
 	void randomizeHeaters(void);
-	void listHeaters(HeaterItem **array, int size);
 #endif
 #endif /* SKETCH_H_ */

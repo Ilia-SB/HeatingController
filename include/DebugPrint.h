@@ -18,6 +18,7 @@
 #else
 #define DEBUG_PRINT(x)
 #define DEBUG_PRINTDEC(x)
+#define DEBUG_PRINTHEX(x)
 #define DEBUG_PRINTLN(x)
 #endif
 
