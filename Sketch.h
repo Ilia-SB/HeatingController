@@ -57,6 +57,7 @@ void initPins(void);
 unsigned long elapsedSince(unsigned long);
 
 void reportTemp(HeaterItem *);
+void reportActualState(HeaterItem *);
 
 #ifdef DEBUG
 	void randomizeHeaters(void);

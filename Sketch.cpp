@@ -463,9 +463,7 @@ void processCommand() {
 					reportTemp(heater);
 					break;
 				case GETACTUALSTATE:
-					dataBuffer[0] = heater->actualState;
-					makeCommand(REPORTACTUALSTATE, heater->address, dataBuffer, 1, respBuffer, &respLen);
-					Serial.write(respBuffer, respLen);
+					reportActualState(heater);
 					break;
 				case GETSTATE:
 					integer = heater->getTemperature();
@@ -875,6 +873,13 @@ void reportTemp(HeaterItem *heater) {
 	byte respLen = 0;
 	heater->getTemperatureBytes(dataBuffer);
 	makeCommand(REPORTTEMP, heater->address, dataBuffer, 3, respBuffer, &respLen);
+	Serial.write(respBuffer, respLen);
+}
+
+void reportActualState(HeaterItem *heater) {
+	byte respLen = 0;
+	dataBuffer[0] = heater->actualState;
+	makeCommand(REPORTACTUALSTATE, heater->address, dataBuffer, 1, respBuffer, &respLen);
 	Serial.write(respBuffer, respLen);
 }
 
