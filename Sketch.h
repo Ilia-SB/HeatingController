@@ -58,6 +58,7 @@ unsigned long elapsedSince(unsigned long);
 
 void reportTemp(HeaterItem *);
 void reportActualState(HeaterItem *);
+void reportTotalConsumption(void);
 
 #ifdef DEBUG
 	void randomizeHeaters(void);

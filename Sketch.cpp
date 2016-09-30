@@ -508,10 +508,7 @@ void processCommand() {
 					eeprom_update_block((void*)&hysteresis, (void*)HYSTERESYS, 4);
 					break;
 				case GETTOTALCONSUMPTION:
-					dataBuffer[0] = *((byte*)&totalConsumption + 1);
-					dataBuffer[1] = *((byte*)&totalConsumption);
-					makeCommand(REPORTTOTALCONSUMPTION, heater->address, dataBuffer, 2, respBuffer, &respLen);
-					Serial.write(respBuffer, respLen);
+					reportTotalConsumption();
 					break;
 				default:
 					break;
@@ -880,6 +877,14 @@ void reportActualState(HeaterItem *heater) {
 	byte respLen = 0;
 	dataBuffer[0] = heater->actualState;
 	makeCommand(REPORTACTUALSTATE, heater->address, dataBuffer, 1, respBuffer, &respLen);
+	Serial.write(respBuffer, respLen);
+}
+
+void reportTotalConsumption() {
+	byte respLen = 0, addr[3] = {0,0,0};
+	dataBuffer[0] = *((byte*)&totalConsumption + 1);
+	dataBuffer[1] = *((byte*)&totalConsumption);
+	makeCommand(REPORTTOTALCONSUMPTION, addr, dataBuffer, 2, respBuffer, &respLen);
 	Serial.write(respBuffer, respLen);
 }
 
