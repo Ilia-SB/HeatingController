@@ -873,6 +873,13 @@ unsigned long elapsedSince(unsigned long then) {
 	return (now - then);
 }
 
+void getTemp(HeaterItem *heater) {
+	byte respLen = 0;
+	heater->getTemperatureBytes(dataBuffer);
+	makeCommand(REPORTTEMP, heater->address, dataBuffer, 3, respBuffer, &respLen);
+	Serial.write(respBuffer, respLen);
+}
+
 void setup()
 {
 	emergencyHandled = millis();
