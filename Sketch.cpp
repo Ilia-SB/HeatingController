@@ -460,9 +460,7 @@ void processCommand() {
 					eepromWriteItem(heaterNumber, CONSUMPTION);
 					break;
 				case GETTEMP:
-					heater->getTemperatureBytes(dataBuffer);
-					makeCommand(REPORTTEMP, heater->address, dataBuffer, 3, respBuffer, &respLen);
-					Serial.write(respBuffer, respLen);
+					getTemp(heater);
 					break;
 				case GETACTUALSTATE:
 					dataBuffer[0] = heater->actualState;
