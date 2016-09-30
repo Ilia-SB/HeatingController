@@ -56,7 +56,7 @@ void validateHeater(uint8_t heaterNumber);
 void initPins(void);
 unsigned long elapsedSince(unsigned long);
 
-void getTemp(HeaterItem *);
+void reportTemp(HeaterItem *);
 
 #ifdef DEBUG
 	void randomizeHeaters(void);

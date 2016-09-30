@@ -460,7 +460,7 @@ void processCommand() {
 					eepromWriteItem(heaterNumber, CONSUMPTION);
 					break;
 				case GETTEMP:
-					getTemp(heater);
+					reportTemp(heater);
 					break;
 				case GETACTUALSTATE:
 					dataBuffer[0] = heater->actualState;
@@ -871,7 +871,7 @@ unsigned long elapsedSince(unsigned long then) {
 	return (now - then);
 }
 
-void getTemp(HeaterItem *heater) {
+void reportTemp(HeaterItem *heater) {
 	byte respLen = 0;
 	heater->getTemperatureBytes(dataBuffer);
 	makeCommand(REPORTTEMP, heater->address, dataBuffer, 3, respBuffer, &respLen);
