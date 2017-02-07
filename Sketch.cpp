@@ -33,6 +33,13 @@ volatile boolean mode = MODE_HEATER_ON;
 boolean flagEmergency = false;
 unsigned long emergencyHandled;
 
+struct EepromDelayedWriteData {
+	boolean isWriteInitiated;
+	unsigned long writeInitiatedTime;
+	uint8_t heaterNumber;
+	uint8_t offset;
+	} eepromDelayedWriteData;
+
 
 void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount) {
 
@@ -394,7 +401,7 @@ void processCommand() {
 					heater->isEnabled = value;
 					makeCommand(REPORTSETENABLED, heater->address, dataBuffer, 1, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
-					eepromWriteItem(heaterNumber, IS_ENABLED);
+					eepromDelayedWrite(heaterNumber, IS_ENABLED);
 					break;
 				case SETTARGETTEMP:
 					value = command[4];
@@ -402,7 +409,7 @@ void processCommand() {
 					heater->setTargetTemperature(value);
 					makeCommand(REPORTSETTARGETTEMP, heater->address, dataBuffer, 1, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
-					eepromWriteItem(heaterNumber, TARGET_TEMP);
+					eepromDelayedWrite(heaterNumber, TARGET_TEMP);
 					break;
 				case SETPRIORITY:
 					value = command[4];
@@ -410,7 +417,7 @@ void processCommand() {
 					heater->priority = value;
 					makeCommand(REPORTSETPRIORITY, heater->address, dataBuffer, 1, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
-					eepromWriteItem(heaterNumber, PRIORITY);
+					eepromDelayedWrite(heaterNumber, PRIORITY);
 					break;
 				case SETAUTO:
 					value = command[4];
@@ -418,7 +425,7 @@ void processCommand() {
 					heater->isAuto = value;
 					makeCommand(REPORTSETAUTO, heater->address, dataBuffer, 1, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);					
-					eepromWriteItem(heaterNumber, IS_AUTO);
+					eepromDelayedWrite(heaterNumber, IS_AUTO);
 					break;
 				case SETONOFF:
 					if (!heater->isAuto) { //only set heater to on if it's not in auto mode
@@ -427,7 +434,7 @@ void processCommand() {
 						heater->isOn = value;
 						makeCommand(REPORTSETONOFF, heater->address, dataBuffer, 1, respBuffer, &respLen);
 						Serial.write(respBuffer, respLen);
-						eepromWriteItem(heaterNumber, IS_ON);
+						eepromDelayedWrite(heaterNumber, IS_ON);
 					}
 					break;
 				case SETSENSOR:
@@ -435,7 +442,7 @@ void processCommand() {
 					memcpy(heater->sensorAddress, command+4, 8);
 					makeCommand(REPORTSETSENSOR, heater->address, dataBuffer, 8, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
-					eepromWriteItem(heaterNumber, SENSOR_ADDRESS);
+					eepromDelayedWrite(heaterNumber, SENSOR_ADDRESS);
 					checkConnected();
 					break;
 				case SETPORT:
@@ -445,7 +452,7 @@ void processCommand() {
 					heater->pin = pins[value-1]; //ports are 1-based
 					makeCommand(REPORTSETPORT, heater->address, dataBuffer, 1, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
-					eepromWriteItem(heaterNumber, PORT);
+					eepromDelayedWrite(heaterNumber, PORT);
 					break;
 				case SETADJUST:
 					integer = command[5];
@@ -458,7 +465,7 @@ void processCommand() {
 					heater->getTemperatureAdjustBytes(dataBuffer);
 					makeCommand(REPORTSETADJUST, heater->address, dataBuffer, 3, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
-					eepromWriteItem(heaterNumber, TEMP_ADJUST);
+					eepromDelayedWrite(heaterNumber, TEMP_ADJUST);
 					break;
 				case SETCONSUMPTION:
 					value = command[4] <<8 | command[5];
@@ -466,7 +473,7 @@ void processCommand() {
 					heater->powerConsumption = value;
 					makeCommand(REPORTSETCONSUMPTION, heater->address, dataBuffer, 2, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
-					eepromWriteItem(heaterNumber, CONSUMPTION);
+					eepromDelayedWrite(heaterNumber, CONSUMPTION);
 					break;
 				case GETTEMP:
 					reportTemp(heater);
@@ -475,8 +482,6 @@ void processCommand() {
 					reportActualState(heater);
 					break;
 				case GETSTATE:
-					integer = heater->getTemperature();
-					decimal = heater->getTemperature()*100 - integer*100;
 					dataBuffer[0] = heater->port;
 					memcpy(dataBuffer+1, heater->sensorAddress, 8);
 					dataBuffer[9] = heater->isAuto;
@@ -613,6 +618,25 @@ void eepromWriteHeater(uint8_t i){
 	
 }
 
+void eepromDelayedWrite(uint8_t heaterNumber, uint8_t offset) {
+	if(!eepromDelayedWriteData.isWriteInitiated) { //no write has been initiated previously. Schedule a new one
+		eepromDelayedWriteData.isWriteInitiated = true;
+		eepromDelayedWriteData.writeInitiatedTime = millis();
+		eepromDelayedWriteData.heaterNumber = heaterNumber;
+		eepromDelayedWriteData.offset = offset;
+	} else { // there is a write pending
+		if (eepromDelayedWriteData.heaterNumber == heaterNumber && eepromDelayedWriteData.offset == offset) { //same heater and same offset. Reschedule write
+			eepromDelayedWriteData.writeInitiatedTime = millis();
+		} else { //another heater or offset. Write the current data and schedule the new write
+			eepromDelayedWriteData.isWriteInitiated = true;
+			eepromWriteItem(eepromDelayedWriteData.heaterNumber, eepromDelayedWriteData.offset);
+			eepromDelayedWriteData.writeInitiatedTime = millis();
+			eepromDelayedWriteData.heaterNumber = heaterNumber;
+			eepromDelayedWriteData.offset = offset;
+		}
+	}
+}
+
 void eepromWriteItem(uint8_t heaterNumber, uint8_t offset) {
 	uint8_t *baseAddress = (uint8_t*)(heaterNumber*HEATER_RECORD_LEN);
 	float t;
@@ -688,6 +712,7 @@ void eepromWriteItem(uint8_t heaterNumber, uint8_t offset) {
 		makeCommand(EEPROMERROR, heaterItems[heaterNumber].address, NULL, 0, comBuffer, &comBufferLen);
 		Serial.write(comBuffer, comBufferLen);
 	}
+	eepromDelayedWriteData.isWriteInitiated = false; //Write complete. Unschedule.
 }
 
 void eepromReadHeater(uint8_t heaterNumber) {
@@ -908,10 +933,16 @@ void setup()
 	MsTimer2::set(READ_SENSORS_DELAY, timer2_ISR);
 	MsTimer2::stop();
 	
+	
+	eepromDelayedWriteData.isWriteInitiated = false;
+	eepromDelayedWriteData.writeInitiatedTime = millis();
+	eepromDelayedWriteData.offset = UNDEFINED;
+	eepromDelayedWriteData.offset = UNDEFINED;
+	
 	Serial.begin(115200);
 	delay(1000);
 	DEBUG_PRINTLN(F(" "));
-	DEBUG_PRINTLN(F("V2.1 starting..."));
+	DEBUG_PRINTLN(F("V1.3.0 starting..."));
 
 	DEBUG_PRINTLN(F("Debug mode"));
 
@@ -946,6 +977,12 @@ void loop()
 	}
 	
 	processSerial();
+	
+	if (eepromDelayedWriteData.isWriteInitiated) {
+		if (elapsedSince(eepromDelayedWriteData.writeInitiatedTime) >= EEPROM_WRITE_DELAY_TIME) {
+			eepromWriteItem(eepromDelayedWriteData.heaterNumber, eepromDelayedWriteData.offset);
+		}
+	}
 	
 	if (serialReadBuffer.commandReceived) {
 		processCommand();

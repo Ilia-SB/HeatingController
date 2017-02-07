@@ -43,6 +43,7 @@ void reportSensorAddresses(void);
 void eepromRead(void);
 void eepromWrite(int i);
 void eepromWriteHeater(uint8_t i);
+void eepromDelayedWrite(uint8_t heaterNumber, uint8_t offset);
 void eepromWriteItem(uint8_t heaterNumber, uint8_t offset);
 void eepromReadHeater(uint8_t heaterNumber);
 bool arraysEqual(byte *array1, byte *array2);

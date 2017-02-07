@@ -49,10 +49,13 @@ const byte HEATER14[3] = {0x00, 0x00, 0x0D};
 #define TARGET_TEMP		13
 #define TEMP_ADJUST		17
 #define CONSUMPTION		21
+#define UNDEFINED		255
 
 #define HEATER_RECORD_LEN	23 /*bytes*/
 
 #define CONSUMPTION_LIMIT (HEATER_RECORD_LEN * NUMBER_OF_HEATERS)
 #define HYSTERESYS (CONSUMPTION_LIMIT + 2)
+
+#define EEPROM_WRITE_DELAY_TIME	5000 /*5 seconds*/
 
 #endif /* CONFIG_H_ */
