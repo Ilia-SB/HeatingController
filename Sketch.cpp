@@ -495,18 +495,19 @@ void processCommand() {
 				case SETCONSUMPTIONLIMIT:
 					value = command[4] <<8 | command[5];
 					consumptionLimit = value;
+					eeprom_update_block((void*)&consumptionLimit, (void*)CONSUMPTION_LIMIT, 2);
 				case GETCONSUMPTIONLIMIT:
 					dataBuffer[0] = *((byte*)&consumptionLimit + 1);
 					dataBuffer[1] = *((byte*)&consumptionLimit);
 					makeCommand(REPORTCONSUMPTIONLIMIT, heater->address, dataBuffer, 2, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
-					eeprom_update_block((void*)&consumptionLimit, (void*)CONSUMPTION_LIMIT, 2);
 					break;
 				case SETHYSTERESIS:
 					integer = command[4];
 					decimal = command[5];
 					f = (integer*100 + decimal)/100.00;
 					hysteresis = f;
+					eeprom_update_block((void*)&hysteresis, (void*)HYSTERESYS, 4);
 				case GETHYSTERESIS:
 					integer = hysteresis;
 					decimal = hysteresis*100 - integer*100;
@@ -514,7 +515,6 @@ void processCommand() {
 					dataBuffer[1] = decimal;
 					makeCommand(REPORTHYSTERESIS, heater->address, dataBuffer, 2, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
-					eeprom_update_block((void*)&hysteresis, (void*)HYSTERESYS, 4);
 					break;
 				case GETTOTALCONSUMPTION:
 					reportTotalConsumption();
