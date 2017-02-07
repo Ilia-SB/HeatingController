@@ -11,12 +11,14 @@
 
 #include "Arduino.h"
 
+#define ADDR_LEN 3
+
 class HeaterItem
 {
 //variables
 public:
 	boolean isEnabled;
-	byte address[3];
+	byte address[ADDR_LEN];
 	byte sensorAddress[8];
 	byte port;
 	byte pin;
@@ -49,9 +51,11 @@ public:
 	float getTemperatureAdjust();
 	void getTemperatureAdjustBytes(byte *array);
 	float getDelta();
+	void getAddressString(char* str, uint8_t* len);
 protected:
 private:
 	HeaterItem( const HeaterItem &c );
+	void byteToHexStr(const byte* value, uint8_t size, char* str, uint8_t* len);
 }; //HeaterItem
 
 #endif //__HEATERITEM_H__

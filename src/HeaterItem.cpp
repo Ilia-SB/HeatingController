@@ -78,10 +78,38 @@ void HeaterItem::getTemperatureAdjustBytes(byte *array) {
 	} else {
 		array[0] = 0;
 	}
-	array[1] = temperatureAdjust;
-	array[2] = temperatureAdjust*100 - array[1]*100;
+	array[1] = abs(temperatureAdjust);
+	array[2] = abs(temperatureAdjust)*100 - array[1]*100;
 }
 
 float HeaterItem::getDelta() {
 	return delta;
+}
+
+void HeaterItem::getAddressString(char* str, uint8_t* len) {
+	byteToHexStr(address, sizeof(address), str, len);
+}
+
+void HeaterItem::byteToHexStr(const byte* value, uint8_t size, char* str, uint8_t* len) {
+	uint8_t t;
+	for (int i=0; i<size; i++) {
+		t = value[i] / 16;
+		if (t < 10) {
+			*str = 48 + t;
+		} else {
+			*str = 55 + t;
+		}
+		str++;
+		
+		t = value[i] % 16;
+		if (t<10) {
+			*str = 48 + t;
+		} else {
+			*str = 55 + t;
+		}
+		str++;
+	}
+	
+	*str = '\0';
+	*len = size * 2;
 }
