@@ -619,17 +619,23 @@ void eepromWriteHeater(uint8_t i){
 }
 
 void eepromDelayedWrite(uint8_t heaterNumber, uint8_t offset) {
+	DEBUG_PRINTLN ("eepromDelayedWrite");
+	DEBUG_PRINT("  Heater ");DEBUG_PRINT(heaterNumber);DEBUG_PRINT(", offset");DEBUG_PRINTLN(offset);
 	if(!eepromDelayedWriteData.isWriteInitiated) { //no write has been initiated previously. Schedule a new one
+		DEBUG_PRINTLN("    New write scheduled");
 		eepromDelayedWriteData.isWriteInitiated = true;
 		eepromDelayedWriteData.writeInitiatedTime = millis();
 		eepromDelayedWriteData.heaterNumber = heaterNumber;
 		eepromDelayedWriteData.offset = offset;
 	} else { // there is a write pending
+		DEBUG_PRINTLN("    Write pending");
 		if (eepromDelayedWriteData.heaterNumber == heaterNumber && eepromDelayedWriteData.offset == offset) { //same heater and same offset. Reschedule write
+			DEBUG_PRINTLN("      Rescheduling");
 			eepromDelayedWriteData.writeInitiatedTime = millis();
 		} else { //another heater or offset. Write the current data and schedule the new write
-			eepromDelayedWriteData.isWriteInitiated = true;
+			DEBUG_PRINTLN("      Flushing and scheduling a new one");
 			eepromWriteItem(eepromDelayedWriteData.heaterNumber, eepromDelayedWriteData.offset);
+			eepromDelayedWriteData.isWriteInitiated = true;
 			eepromDelayedWriteData.writeInitiatedTime = millis();
 			eepromDelayedWriteData.heaterNumber = heaterNumber;
 			eepromDelayedWriteData.offset = offset;
@@ -638,6 +644,8 @@ void eepromDelayedWrite(uint8_t heaterNumber, uint8_t offset) {
 }
 
 void eepromWriteItem(uint8_t heaterNumber, uint8_t offset) {
+	DEBUG_PRINTLN("eepromWriteItem");
+	DEBUG_PRINT("  Heater ");DEBUG_PRINT(heaterNumber);DEBUG_PRINT(", offset ");DEBUG_PRINTLN(offset);
 	uint8_t *baseAddress = (uint8_t*)(heaterNumber*HEATER_RECORD_LEN);
 	float t;
 	uint16_t c;
@@ -708,9 +716,12 @@ void eepromWriteItem(uint8_t heaterNumber, uint8_t offset) {
 			break;
 	}
 	if (flagWriteError) {
+		DEBUG_PRINTLN("Write error!!!!!!!");
 		byte comBuffer[6], comBufferLen = 0;
 		makeCommand(EEPROMERROR, heaterItems[heaterNumber].address, NULL, 0, comBuffer, &comBufferLen);
 		Serial.write(comBuffer, comBufferLen);
+	} else {
+		DEBUG_PRINTLN("Write successful.");
 	}
 	eepromDelayedWriteData.isWriteInitiated = false; //Write complete. Unschedule.
 }
