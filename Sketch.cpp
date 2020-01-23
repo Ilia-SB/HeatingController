@@ -844,7 +844,7 @@ void initHeaters() {
 		validateHeater(i);
 	}
 	eeprom_read_block((void*)&consumptionLimit, (void*)CONSUMPTION_LIMIT, 2);
-	if (consumptionLimit < 0 || consumptionLimit > 8000) {
+	if (consumptionLimit < 0 || consumptionLimit > MAX_CONSUMPTION_LIMIT) {
 		consumptionLimit = DEFAULT_CONSUMPTION_LIMIT;
 	}
 	eeprom_read_block((void*)&hysteresis, (void*)HYSTERESYS, 4);

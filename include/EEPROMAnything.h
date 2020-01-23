@@ -10,7 +10,7 @@
 #define EEPROMANYTHING_H_
 
 #include <Arduino.h>  // for type definitions
-#include <EEPROM.h>
+#include "EEPROM.h"
 
 template <class T> int EEPROM_writeAnything(int ee, const T& value)
 {

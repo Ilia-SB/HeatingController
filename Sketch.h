@@ -11,8 +11,8 @@
 
 #include "Arduino.h"
 #include "EEPROMAnything.h"
-#include <EEPROM.h>
-#include "avr/eeprom.h"
+#include "EEPROM.h"
+//#include "avr/eeprom.h"
 #include "config.h"
 #include "CommBuffer.h"
 #include "ConsumptionMeter.h"
