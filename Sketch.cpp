@@ -14,11 +14,11 @@ byte respBuffer[30], dataBuffer[27];
 byte type_s = 0; /*sensor type. Hack to be able to use copypasted code*/
 HeaterItem heaterItems[NUMBER_OF_HEATERS];
 
-byte connectedSensors[NUMBER_OF_HEATERS][8]; /*holds addresses of connected sensors*/
-byte connectedSensorCount = 0; /*Number of connected sensors*/
-byte unconfiguredSensors[NUMBER_OF_HEATERS][8]; /*holds addresses of connected sensors*/
-byte unconfiguredSensorCount = 0; /*Number of disconnected sensors*/
-byte configuredItemsCount = 0;
+//byte connectedSensors[NUMBER_OF_HEATERS][8]; /*holds addresses of connected sensors*/
+//byte connectedSensorCount = 0; /*Number of connected sensors*/
+//byte unconfiguredSensors[NUMBER_OF_HEATERS][8]; /*holds addresses of connected sensors*/
+//byte unconfiguredSensorCount = 0; /*Number of disconnected sensors*/
+//byte configuredItemsCount = 0;
 
 uint16_t consumptionLimit;
 uint16_t totalConsumption;

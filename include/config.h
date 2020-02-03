@@ -9,8 +9,8 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-#define NUMBER_OF_HEATERS 14
-const int pins[NUMBER_OF_HEATERS] = {4,5,6,7,8,9,17,16,15,14,13,12,11,10}; /*pins that control relays*/
+#define NUMBER_OF_HEATERS 10
+const int pins[NUMBER_OF_HEATERS] = {4,5,6,7,8,9,17,16,15,14}; /*pins that control relays*/
 
 #define SENSOR 2
 #define CM_SENSOR	3
@@ -26,21 +26,17 @@ const int pins[NUMBER_OF_HEATERS] = {4,5,6,7,8,9,17,16,15,14,13,12,11,10}; /*pin
 #define OFF_ON_DELAY 2000000 /*?s*/
 #define READ_SENSORS_DELAY 1000 /*ms*/
 
-const byte HEATER1[3] = {0x00, 0x00, 0x00};
-const byte HEATER2[3] =	{0x00, 0x00, 0x01};
-const byte HEATER3[3] =	{0x00, 0x00, 0x02};
-const byte HEATER4[3] =	{0x00, 0x00, 0x03};
-const byte HEATER5[3] =	{0x00, 0x00, 0x04};
-const byte HEATER6[3] =	{0x00, 0x00, 0x05};
-const byte HEATER7[3] =	{0x00, 0x00, 0x06};
-const byte HEATER8[3] =	{0x00, 0x00, 0x07};
-const byte HEATER9[3] =	{0x00, 0x00, 0x08};
-const byte HEATER10[3] = {0x00, 0x00, 0x09};
-const byte HEATER11[3] = {0x00, 0x00, 0x0A};
-const byte HEATER12[3] = {0x00, 0x00, 0x0B};
-const byte HEATER13[3] = {0x00, 0x00, 0x0C};
-const byte HEATER14[3] = {0x00, 0x00, 0x0D};
-	
+const byte PROGMEM HEATER1[3] = {0x00, 0x00, 0x00};
+const byte PROGMEM HEATER2[3] =	{0x00, 0x00, 0x01};
+const byte PROGMEM HEATER3[3] =	{0x00, 0x00, 0x02};
+const byte PROGMEM HEATER4[3] =	{0x00, 0x00, 0x03};
+const byte PROGMEM HEATER5[3] =	{0x00, 0x00, 0x04};
+const byte PROGMEM HEATER6[3] =	{0x00, 0x00, 0x05};
+const byte PROGMEM HEATER7[3] =	{0x00, 0x00, 0x06};
+const byte PROGMEM HEATER8[3] =	{0x00, 0x00, 0x07};
+const byte PROGMEM HEATER9[3] =	{0x00, 0x00, 0x08};
+const byte PROGMEM HEATER10[3] = {0x00, 0x00, 0x09};
+
 #define SENSOR_ADDRESS	0
 #define IS_ENABLED		8
 #define PORT			9
