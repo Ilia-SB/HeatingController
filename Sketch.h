@@ -23,6 +23,9 @@
 #include "MsTimer2.h"
 #include "Interface.h"
 #include "DebugPrint.h"
+#include <Ethernet.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
 
 void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount);
 void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount);
