@@ -9,6 +9,8 @@
 #ifndef SKETCH_H_
 #define SKETCH_H_
 
+#define DEBUG
+
 #include "Arduino.h"
 #include "EEPROMAnything.h"
 #include "EEPROM.h"
@@ -26,6 +28,9 @@
 #include <Ethernet.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#ifdef DEBUG
+    #include "MemoryFree.h"
+#endif
 
 void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount);
 void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount);
@@ -41,8 +46,6 @@ void startSensorsRead(void);
 void processCommand(void);
 bool commandIsValid(byte *command, int len);
 byte calculateCRC(byte *command, int len);
-void reportSensors(void);
-void reportSensorAddresses(void);
 void eepromRead(void);
 void eepromWrite(int i);
 void eepromWriteHeater(uint8_t i);
@@ -50,22 +53,18 @@ void eepromDelayedWrite(uint8_t heaterNumber, uint8_t offset);
 void eepromWriteItem(uint8_t heaterNumber, uint8_t offset);
 void eepromReadHeater(uint8_t heaterNumber);
 bool arraysEqual(byte *array1, byte *array2);
-void checkConnected(void);
-void reportUnconnected(void);
-void reportUnconfigured(void);
-void printAddress(byte *address);
+void printAddress(const byte *address, const uint8_t len);
 void initHeaters();
-void makeCommand(byte command, byte* address, byte* data, int dataLen, byte* comBuffer, byte* comBufferLen);
+void makeCommand(byte command, const byte* address, byte* data, int dataLen, byte* comBuffer, byte* comBufferLen);
 void validateHeater(uint8_t heaterNumber);
 void initPins(void);
 unsigned long elapsedSince(unsigned long);
 void listHeaters(HeaterItem **array, int size);
+void stringToByteArray(const char* string, uint8_t len, byte* hex);
+void byteArrayToString(const byte* hex, uint8_t len, char* string);
 
 void reportTemp(HeaterItem *);
 void reportActualState(HeaterItem *);
 void reportTotalConsumption(void);
 
-#ifdef DEBUG
-	void randomizeHeaters(void);
-#endif
 #endif /* SKETCH_H_ */

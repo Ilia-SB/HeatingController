@@ -9,6 +9,8 @@
 #ifndef __COMMBUFFER_H__
 #define __COMMBUFFER_H__
 
+#define COMMAND_SEPARATOR	'\n'
+
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>

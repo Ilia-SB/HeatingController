@@ -87,7 +87,7 @@ float HeaterItem::getDelta() {
 }
 
 void HeaterItem::getAddressString(char* str, uint8_t* len) {
-	byteToHexStr(address, sizeof(address), str, len);
+	byteToHexStr(*address, sizeof(*address), str, len);
 }
 
 void HeaterItem::byteToHexStr(const byte* value, uint8_t size, char* str, uint8_t* len) {

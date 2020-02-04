@@ -42,9 +42,7 @@ struct EepromDelayedWriteData {
 
 
 void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount) {
-
-	
-		DEBUG_PRINT(F("heatersOff (")); DEBUG_PRINT(availablePower); DEBUG_PRINTLN(F(")"));
+	DEBUG_PRINT(F("heatersOff (")); DEBUG_PRINT(availablePower); DEBUG_PRINTLN(F(")"));
 	
 	/************************************************************************/
 	/* Manual heaters                                                       */
@@ -59,7 +57,7 @@ void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCou
 				digitalLow(manualHeaters[i]->pin);
 				availablePower += manualHeaters[i]->powerConsumption;
 				
-					printAddress(manualHeaters[i]->address); DEBUG_PRINT(F( " Manual heater ")); DEBUG_PRINT(manualHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (by request)."));
+					printAddress(manualHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F( " Manual heater ")); DEBUG_PRINT(manualHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (by request)."));
 				
 			}
 	}
@@ -79,7 +77,7 @@ void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCou
 			digitalLow(autoHeaters[i]->pin);
 			availablePower += autoHeaters[i]->powerConsumption;
 			
-				printAddress(autoHeaters[i]->address); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (targetTemp reached)."));
+				printAddress(autoHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (targetTemp reached)."));
 			
 		}
 	}
@@ -94,7 +92,7 @@ void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCou
 				autoHeaters[i]->actualState = false;
 				digitalLow(autoHeaters[i]->pin);
 				availablePower += autoHeaters[i]->powerConsumption;
-				printAddress(autoHeaters[i]->address); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (not enough power, EMERGENCY)."));
+				printAddress(autoHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (not enough power, EMERGENCY)."));
 			}
 		}
 	
@@ -105,7 +103,7 @@ void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCou
 				availablePower += manualHeaters[i]->powerConsumption;
 
 			
-				printAddress(manualHeaters[i]->address); DEBUG_PRINT(F(" Manual heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (not enough power)."));
+				printAddress(manualHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Manual heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (not enough power)."));
 			
 			}
 		}
@@ -138,10 +136,10 @@ void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCoun
 				manualHeaters[i]->actualState = true;
 				digitalHigh(manualHeaters[i]->pin);
 				
-				printAddress(manualHeaters[i]->address); DEBUG_PRINT(F(" Manual heater ")); DEBUG_PRINT(manualHeaters[i]->port); DEBUG_PRINTLN(F(" set to ON (by request)."));
+				printAddress(manualHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Manual heater ")); DEBUG_PRINT(manualHeaters[i]->port); DEBUG_PRINTLN(F(" set to ON (by request)."));
 				
 			} else { //Not enough power, no action
-				printAddress(manualHeaters[i]->address); DEBUG_PRINT(F(" Manual heater ")); DEBUG_PRINT(manualHeaters[i]->port); DEBUG_PRINTLN(F(" not set to ON (not enough power)."));
+				printAddress(manualHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Manual heater ")); DEBUG_PRINT(manualHeaters[i]->port); DEBUG_PRINTLN(F(" not set to ON (not enough power)."));
 				
 			}
 		}
@@ -162,11 +160,11 @@ void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCoun
 				autoHeaters[i]->actualState = true;
 				digitalHigh(autoHeaters[i]->pin);
 				
-				printAddress(autoHeaters[i]->address); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to ON."));
+				printAddress(autoHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to ON."));
 				
 			} else { //Not enough power, no action
 			
-				printAddress(autoHeaters[i]->address); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" not set to ON (not enough power)."));
+				printAddress(autoHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" not set to ON (not enough power)."));
 				
 			}
 		}
@@ -185,7 +183,7 @@ void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCoun
 void processHeaters(int currentConsumption, boolean mode) {
 	
 	DEBUG_PRINTLN(F("==========")); DEBUG_PRINT(F("Current consumption: ")); DEBUG_PRINTLN(currentConsumption);
-	
+	DEBUG_MEMORY();
 	
 	int autoHeatersCount = 0;
 	int manualHeatersCount = 0;
@@ -262,38 +260,66 @@ void processSerial()
 }
 
 void detectSensors() {
+	DEBUG_PRINTLN(F("Detecting sensors..."));
+	DEBUG_MEMORY();
+	byte *unconnected[NUMBER_OF_HEATERS], *unconfigured[NUMBER_OF_HEATERS];
 	byte addr[8];
-	
-	connectedSensorCount=0;
-	
-	for (int i=0; i<NUMBER_OF_HEATERS; i++) {
-		for (int j=0; j<8; j++) {
-			connectedSensors[i][j] = 0;
-		}
-	}
+	byte connectedSensors[NUMBER_OF_HEATERS][8];
+
+	uint8_t connectedSensorCount = 0, unconfiguredCount = 0, unconnectedCount = 0;
 	
 	ds.reset_search();
 	while (ds.search(addr)) {
 		if (OneWire::crc8(addr, 7) != addr[7]) { /*Check CRC*/
-
 			DEBUG_PRINTLN(F("CRC is not valid!"));
-
 			connectedSensorCount = 0;
+			for (uint8_t i = 0;i < NUMBER_OF_HEATERS;i++) {
+				heaterItems[i].isConnected = false;
+			}
+			return;
 		}
-		
+
+		memcpy(connectedSensors[connectedSensorCount], addr, 8);
 		DEBUG_PRINT(F(" ")); DEBUG_PRINT(connectedSensorCount); DEBUG_PRINT(F(": "));
-
-		for (int i=0; i<8; i++) {	/*Store the new address*/
-			connectedSensors[connectedSensorCount][i] = addr[i];
-
-			DEBUG_PRINTHEX(addr[i]); DEBUG_PRINT(F(" "));
-
-		}
-
-		DEBUG_PRINTLN();
-		
+		printAddress(connectedSensors[connectedSensorCount],  6);DEBUG_PRINTLN();
 		connectedSensorCount++;
 	}
+
+	DEBUG_PRINTLN();DEBUG_PRINTLN(F("Unconfigured sensors:"));
+	for (uint8_t i = 0;i < connectedSensorCount;i++) {
+		bool configured = false;
+		for (uint8_t j = 0;j < NUMBER_OF_HEATERS;j++) {
+			if (arraysEqual(connectedSensors[i], heaterItems[j].sensorAddress)) {
+				heaterItems[j].isConnected = true;
+				configured = true;
+				break;
+			}
+		}
+		if (!configured) {
+			unconfigured[unconfiguredCount] = connectedSensors[i];
+			unconfiguredCount++;
+			printAddress(connectedSensors[i]+1, 6);DEBUG_PRINTLN();
+		}
+	}
+
+	DEBUG_PRINTLN();DEBUG_PRINTLN(F("Configured but not connected sensors:"));
+	for (uint8_t i = 0; i < NUMBER_OF_HEATERS; i++) {
+		bool connected = false;
+		for (uint8_t j = 0;j < connectedSensorCount; j++) {
+			if (arraysEqual(heaterItems[i].sensorAddress, connectedSensors[j])) {
+				connected = true;
+				break;
+			}
+		}
+		if (!connected) {
+			heaterItems[i].isConnected = false;
+			unconnected[unconnectedCount] = heaterItems[i].sensorAddress;
+			unconnectedCount++;
+			printAddress(heaterItems[i].sensorAddress+1, 6);DEBUG_PRINTLN();
+		}
+	}
+	DEBUG_MEMORY();
+	DEBUG_PRINTLN(F("Detection finished"));
 }
 
 void startSensor(byte *addr) {
@@ -443,7 +469,8 @@ void processCommand() {
 					makeCommand(REPORTSETSENSOR, heater->address, dataBuffer, 8, respBuffer, &respLen);
 					Serial.write(respBuffer, respLen);
 					eepromDelayedWrite(heaterNumber, SENSOR_ADDRESS);
-					checkConnected();
+					//checkConnected();
+					//TODO check if it's connected
 					break;
 				case SETPORT:
 					value = command[4];
@@ -539,7 +566,7 @@ bool commandIsValid(byte *command, int len) {
 	if (len >= 4) { //valid command is at least 4 bytes long
 		uint8_t crc = 0;
 		crc = calculateCRC(command, len-1);
-		if (crc == command[len-1] | 0x80) {
+		if (crc == (command[len-1] | 0x80)) {
 			return true;
 		}
 	}
@@ -553,42 +580,6 @@ byte calculateCRC(byte *command, int len) {
 	}
 	crc &= 0xF7;
 	return crc;
-}
-
-void reportSensors() {
-
-	DEBUG_PRINT(F("0"));
-	for(int i=0; i<NUMBER_OF_HEATERS; i++) {
-		for (int j=0; j<8; j++) {
-			if (connectedSensors[i][j] < 0x10) {
-				DEBUG_PRINT(F("0"));
-			}
-			DEBUG_PRINTHEX(connectedSensors[i][j]);
-		}
-		DEBUG_PRINT(F(":"));
-		DEBUG_PRINT(temperatures[i]);
-		if (i < 9) {
-			DEBUG_PRINT(F("|"));
-		}
-	}
-
-}
-
-void reportSensorAddresses() {
-
-	DEBUG_PRINT(F("2"));
-	for (int i=0; i<NUMBER_OF_HEATERS; i++) {
-		for(int j=0; j<8; j++) {
-			if (connectedSensors[i][j] < 0x10) {
-				DEBUG_PRINT(F("0"));
-			}
-			DEBUG_PRINTHEX(connectedSensors[i][j]);
-		}
-		if(i < 9) {
-			DEBUG_PRINT(F("|"));
-		}
-	}
-
 }
 
 void eepromWriteHeater(uint8_t i){
@@ -757,87 +748,25 @@ bool arraysEqual(byte *array1, byte *array2) {
 	return true;
 }
 
-void checkConnected() {
-	for (int i=0; i<NUMBER_OF_HEATERS; i++) {
-		heaterItems[i].isConnected = false;
-		for (int j=0; j<connectedSensorCount; j++) {
-			if (arraysEqual(heaterItems[i].sensorAddress, connectedSensors[j])) { /* configured sensor is connected */
-				heaterItems[i].isConnected = true;
-				break;
-			}
-		}
-	}
-	
-	for (int i=0; i<connectedSensorCount; i++) {
-		bool configured = false;
-		for (int j=0; j<NUMBER_OF_HEATERS; j++) {
-			if (arraysEqual(connectedSensors[i], heaterItems[j].sensorAddress)) {
-				configured = true;
-				break;
-			}
-		}
-		if (!configured) {
-			memcpy(unconfiguredSensors[unconfiguredSensorCount++], connectedSensors[i], 8); /*add to unconfigured list*/
-		}
-	}
-}
-
-void reportUnconnected() {
-
-	DEBUG_PRINTLN(F("Configured but not connected sensors: "));
-	for (int i=0; i<NUMBER_OF_HEATERS; i++) {
-		if (!heaterItems[i].isConnected) {
-			printAddress(heaterItems[i].sensorAddress);
-			if (i==NUMBER_OF_HEATERS-1) {
-				DEBUG_PRINTLN(F("."));
-			} else {
-				DEBUG_PRINTLN(F(", "));
-			}
-		}
-	}
-
-}
-
-void reportUnconfigured() {
-
-	DEBUG_PRINTLN(F("Connected but not configured sensors: "));
-	for (int i=0; i<unconfiguredSensorCount; i++) {
-		printAddress(unconfiguredSensors[i]);
-		if (i==unconfiguredSensorCount-1) {
-			DEBUG_PRINTLN(F("."));
-		} else {
-			DEBUG_PRINTLN(F(","));
-		}
-	}
-
-}
-
-void printAddress(byte address[3]) {
+void printAddress(const byte* address, const uint8_t len) {
 #ifdef DEBUG
-	for (int i=0; i<3; i++) {
-		if (address[i] < 0x10) {
-			DEBUG_PRINT(F("0"));
-		}
-		DEBUG_PRINTHEX(address[i]); DEBUG_PRINT(F(" "));
-	}
+	char buff[13];
+	byteArrayToString(address, len, buff);
+	DEBUG_PRINT(buff);
 #endif
 }
 
 void initHeaters() {
-	memcpy(heaterItems[0].address, HEATER1, 3);
-	memcpy(heaterItems[1].address, HEATER2, 3);
-	memcpy(heaterItems[2].address, HEATER3, 3);
-	memcpy(heaterItems[3].address, HEATER4, 3);
-	memcpy(heaterItems[4].address, HEATER5, 3);
-	memcpy(heaterItems[5].address, HEATER6, 3);
-	memcpy(heaterItems[6].address, HEATER7, 3);
-	memcpy(heaterItems[7].address, HEATER8, 3);
-	memcpy(heaterItems[8].address, HEATER9, 3);
-	memcpy(heaterItems[9].address, HEATER10, 3);
-	memcpy(heaterItems[10].address, HEATER11, 3);
-	memcpy(heaterItems[11].address, HEATER12, 3);
-	memcpy(heaterItems[12].address, HEATER13, 3);
-	memcpy(heaterItems[13].address, HEATER14, 3);
+	heaterItems[0].address = HEATER1;
+	heaterItems[1].address = HEATER2;
+	heaterItems[2].address = HEATER3;
+	heaterItems[3].address = HEATER4;
+	heaterItems[4].address = HEATER5;
+	heaterItems[5].address = HEATER6;
+	heaterItems[6].address = HEATER7;
+	heaterItems[7].address = HEATER8;
+	heaterItems[8].address = HEATER9;
+	heaterItems[9].address = HEATER10;
 
 	for (uint8_t i=0; i<NUMBER_OF_HEATERS; i++) {
 		eepromReadHeater(i);
@@ -876,7 +805,7 @@ void validateHeater(uint8_t heaterNumber) {
 void listHeaters(HeaterItem **array, int size) {
 
 	for (int i=0; i<size; i++) {
-		printAddress(array[i]->address); DEBUG_PRINT(F(": ")); DEBUG_PRINT(array[i]->priority); DEBUG_PRINT(F("   ")); DEBUG_PRINT(array[i]->getTemperature()); DEBUG_PRINT(F("   ")); DEBUG_PRINT(array[i]->getDelta()); DEBUG_PRINT(F(" "));
+		printAddress(array[i]->address+1, 6); DEBUG_PRINT(F(": ")); DEBUG_PRINT(array[i]->priority); DEBUG_PRINT(F("   ")); DEBUG_PRINT(array[i]->getTemperature()); DEBUG_PRINT(F("   ")); DEBUG_PRINT(array[i]->getDelta()); DEBUG_PRINT(F(" "));
 		if (array[i]->actualState) {
 			DEBUG_PRINT(F("x"));
 		}
@@ -889,7 +818,7 @@ void listHeaters(HeaterItem **array, int size) {
 
 }
 
-void makeCommand(byte command, byte* address, byte* data, int dataLen, byte* comBuffer, byte* comBufferLen) {
+void makeCommand(byte command, const byte* address, byte* data, int dataLen, byte* comBuffer, byte* comBufferLen) {
 	comBuffer[0] = BEGINTRANSMISSION;
 	comBuffer[1] = command;
 	memcpy(comBuffer + 2, address, 3);
@@ -954,23 +883,18 @@ void setup()
 	delay(1000);
 	DEBUG_PRINTLN(F(" "));
 	DEBUG_PRINTLN(F("V1.3.0 starting..."));
-
 	DEBUG_PRINTLN(F("Debug mode"));
-
 	DEBUG_PRINTLN();
-	
+
 	consumptionLimit = DEFAULT_CONSUMPTION_LIMIT;
-	unconfiguredSensorCount = 0;
 	initPins();
 	initHeaters(); /*will assign heater addresses*/
 	detectSensors(); /*will populate connectedSensors*/
-	checkConnected(); /* will relate configured and connected items and fill unconfigured  list */
-	reportUnconnected();
-	reportUnconfigured();
 	startSensorsRead(); /*will populate temperatures*/
 	delay(1000);
 	endSensorsRead();
 	Timer1.start();
+	DEBUG_MEMORY();
 }
 
 void loop()
@@ -1024,4 +948,22 @@ void loop()
 			Timer1.setPeriod(PROCESSING_INTERVAL);
 		}
 	}
+}
+
+void stringToByteArray(const char* string, uint8_t len, byte* hex) {
+	if (len == 3) {
+		sscanf(string, "%2x%2x%2x", &hex[0], &hex[1], &hex[2]);
+	}
+	else if (len == 6) {
+		sscanf(string, "%2x%2x%2x%2x%2x%2x", &hex[0], &hex[1], &hex[2], &hex[3], &hex[4], &hex[5]);
+	}
+}
+
+void byteArrayToString(const byte* hex, uint8_t len, char* string) {
+	char* pos = string;
+	for (uint8_t i = 0;i < len;i++) {
+		sprintf(pos, "%02X", hex[i]);
+		pos = pos + 2;
+	}
+	string[len * 2] = '\0';
 }

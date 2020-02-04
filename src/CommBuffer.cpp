@@ -26,27 +26,17 @@ CommBuffer::~CommBuffer()
 
 void CommBuffer::addChar(int c)
 {
-	if ((uint8_t)c == BEGINTRANSMISSION) {
-		if (!receivingCommand) {
-			receivingCommand = true;
-			return;
-		}
+	if ((char)c == COMMAND_SEPARATOR) { //if command terminator found
+		commandReceived = true; /*raise commandReceived flag*/
+		commandsStored++;
 	}
 	
-	if (receivingCommand) {
-		if ((char)c == ';') { //if command terminator found
-			commandReceived = true; /*raise commandReceived flag*/
-			receivingCommand = false;
-			commandsStored++;
-		}
-	
-		if (position < size) /*is there's still room*/
-		{
-			memcpy(array + position, &c, 1); /*Add character to buffer*/
-			position++; /*increment buffer position*/
-		} else {
-			bufferOverflow = true; /*raise bufferOverflow flag*/
-		}
+	if (position < size) /*is there's still room*/
+	{
+		memcpy(array + position, &c, 1); /*Add character to buffer*/
+		position++; /*increment buffer position*/
+	} else {
+		bufferOverflow = true; /*raise bufferOverflow flag*/
 	}
 }
 

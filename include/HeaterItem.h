@@ -18,7 +18,7 @@ class HeaterItem
 //variables
 public:
 	boolean isEnabled;
-	byte address[ADDR_LEN];
+	const byte* address;
 	byte sensorAddress[8];
 	byte port;
 	byte pin;

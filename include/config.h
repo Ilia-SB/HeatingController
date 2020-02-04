@@ -15,8 +15,8 @@ const int pins[NUMBER_OF_HEATERS] = {4,5,6,7,8,9,17,16,15,14}; /*pins that contr
 #define SENSOR 2
 #define CM_SENSOR	3
 #define I2C_ADDRESS 0x01
-#define COMMAND_BUFFER_LEN 128
-#define RESPONSE_BUFFER_LEN 128
+#define COMMAND_BUFFER_LEN 280
+#define RESPONSE_BUFFER_LEN 280
 #define DEFAULT_TEMPERATURE 5
 #define DEFAULT_TEMPERATURE_ADJUST 0
 #define DEFAULT_CONSUMPTION_LIMIT 10000
@@ -26,7 +26,7 @@ const int pins[NUMBER_OF_HEATERS] = {4,5,6,7,8,9,17,16,15,14}; /*pins that contr
 #define OFF_ON_DELAY 2000000 /*?s*/
 #define READ_SENSORS_DELAY 1000 /*ms*/
 
-const byte PROGMEM HEATER1[3] = {0x00, 0x00, 0x00};
+const byte PROGMEM HEATER1[3] =   {0x00, 0x00, 0x00};
 const byte PROGMEM HEATER2[3] =	{0x00, 0x00, 0x01};
 const byte PROGMEM HEATER3[3] =	{0x00, 0x00, 0x02};
 const byte PROGMEM HEATER4[3] =	{0x00, 0x00, 0x03};
