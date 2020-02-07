@@ -8,9 +8,12 @@
 
 #include "Sketch.h"
 
+const char PROGMEM MQTT_COMMAND_TOPIC[] = {"ehome/heating/commands"}; //22
+const char PROGMEM MQTT_STATUSES_TOPIC[] = { "ehome/heating/statuses" }; //22
+const char PROGMEM TOTAL_CONSUMPTION[] = { "total_consumption" };
+
 OneWire  ds(SENSOR);
-CommBuffer serialReadBuffer(COMMAND_BUFFER_LEN);
-byte respBuffer[30], dataBuffer[27];
+//CommBuffer serialReadBuffer(COMMAND_BUFFER_LEN);
 byte type_s = 0; /*sensor type. Hack to be able to use copypasted code*/
 HeaterItem heaterItems[NUMBER_OF_HEATERS];
 
@@ -24,7 +27,7 @@ uint16_t consumptionLimit;
 uint16_t totalConsumption;
 float hysteresis;
 
-float temperatures[NUMBER_OF_HEATERS] = {0}; /*holds readings from all sensors*/
+//float temperatures[NUMBER_OF_HEATERS] = {0}; /*holds readings from all sensors*/
 	
 volatile boolean flagTimer1 = false;
 volatile boolean flagTimer2 = false;
@@ -40,6 +43,17 @@ struct EepromDelayedWriteData {
 	uint8_t offset;
 	} eepromDelayedWriteData;
 
+EthernetClient ethClient;
+PubSubClient mqttClient(ethClient);
+
+/*
+enum
+{
+	ADC0,
+	TOTAL_REGS_SIZE
+};
+unsigned int holdingRegs[TOTAL_REGS_SIZE];
+*/
 
 void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount) {
 	DEBUG_PRINT(F("heatersOff (")); DEBUG_PRINT(availablePower); DEBUG_PRINTLN(F(")"));
@@ -175,8 +189,8 @@ void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCoun
 	/************************************************************************/
 	reportTotalConsumption();
 	for (int i=0; i<NUMBER_OF_HEATERS; i++) {
-		reportTemp(&heaterItems[i]);
-		reportActualState(&heaterItems[i]);
+		//reportTemp(&heaterItems[i]);
+		//reportActualState(&heaterItems[i]);
 	}
 }
 
@@ -250,6 +264,7 @@ void sortHeaters(HeaterItem **array, int size) {
 	}
 }
 
+/*
 void processSerial()
 {
 	while(Serial.available())
@@ -258,6 +273,7 @@ void processSerial()
 		serialReadBuffer.addChar(c);
 	}
 }
+*/
 
 void detectSensors() {
 	DEBUG_PRINTLN(F("Detecting sensors..."));
@@ -390,7 +406,7 @@ void endSensorsRead() {
 				heaterItems[i].setTemperature(temp);
 			} else {
 				byte respBuffer[7], respLen = 0;
-				makeCommand(TEMPREADERROR, heaterItems[i].address, NULL, 0, respBuffer, &respLen);
+				//makeCommand(TEMPREADERROR, heaterItems[i].address, NULL, 0, respBuffer, &respLen);
 				Serial.write(respBuffer, respLen);
 				Serial.print(1,DEC);
 			}
@@ -399,6 +415,7 @@ void endSensorsRead() {
 }
 
 void processCommand() {
+	/*
 	byte command[15];
 	int commandLen=15;
 	serialReadBuffer.getCommand(command, &commandLen);
@@ -560,8 +577,10 @@ void processCommand() {
 
 		}
 	}
+	*/
 }
 
+/*
 bool commandIsValid(byte *command, int len) {
 	if (len >= 4) { //valid command is at least 4 bytes long
 		uint8_t crc = 0;
@@ -572,6 +591,7 @@ bool commandIsValid(byte *command, int len) {
 	}
 	return false;
 }
+*/
 
 byte calculateCRC(byte *command, int len) {
 	uint8_t crc = 0;
@@ -709,7 +729,7 @@ void eepromWriteItem(uint8_t heaterNumber, uint8_t offset) {
 	if (flagWriteError) {
 		DEBUG_PRINTLN("Write error!!!!!!!");
 		byte comBuffer[6], comBufferLen = 0;
-		makeCommand(EEPROMERROR, heaterItems[heaterNumber].address, NULL, 0, comBuffer, &comBufferLen);
+		//makeCommand(EEPROMERROR, heaterItems[heaterNumber].address, NULL, 0, comBuffer, &comBufferLen);
 		Serial.write(comBuffer, comBufferLen);
 	} else {
 		DEBUG_PRINTLN("Write successful.");
@@ -818,6 +838,7 @@ void listHeaters(HeaterItem **array, int size) {
 
 }
 
+/*
 void makeCommand(byte command, const byte* address, byte* data, int dataLen, byte* comBuffer, byte* comBufferLen) {
 	comBuffer[0] = BEGINTRANSMISSION;
 	comBuffer[1] = command;
@@ -827,6 +848,7 @@ void makeCommand(byte command, const byte* address, byte* data, int dataLen, byt
 	comBuffer[6+dataLen] = 0x3b;
 	*comBufferLen = 7 + dataLen;
 }
+*/
 
 void initPins() {
 	for (int i=0;i<NUMBER_OF_HEATERS;i++) {
@@ -840,6 +862,7 @@ unsigned long elapsedSince(unsigned long then) {
 	return (now - then);
 }
 
+/*
 void reportTemp(HeaterItem *heater) {
 	byte respLen = 0;
 	heater->getTemperatureBytes(dataBuffer);
@@ -853,13 +876,16 @@ void reportActualState(HeaterItem *heater) {
 	makeCommand(REPORTACTUALSTATE, heater->address, dataBuffer, 1, respBuffer, &respLen);
 	Serial.write(respBuffer, respLen);
 }
-
+*/
 void reportTotalConsumption() {
-	byte respLen = 0, addr[3] = {0,0,0};
-	dataBuffer[0] = *((byte*)&totalConsumption + 1);
-	dataBuffer[1] = *((byte*)&totalConsumption);
-	makeCommand(REPORTTOTALCONSUMPTION, addr, dataBuffer, 2, respBuffer, &respLen);
-	Serial.write(respBuffer, respLen);
+	StaticJsonDocument<38> json;
+	//Serial.println(MQTT_STATUSES_TOPIC);
+	char payload[50];
+	json[TOTAL_CONSUMPTION] = totalConsumption;
+	serializeJson(json, payload);
+	mqttClient.publish(MQTT_STATUSES_TOPIC, payload);
+	Serial.println(payload);
+	//Serial.println();Serial.print(F("!!! Free memory: "));Serial.print(freeMemory());Serial.println(F(" !!!"));Serial.println();
 }
 
 void setup()
@@ -878,13 +904,25 @@ void setup()
 	eepromDelayedWriteData.writeInitiatedTime = millis();
 	eepromDelayedWriteData.offset = UNDEFINED;
 	eepromDelayedWriteData.offset = UNDEFINED;
-	
+//#ifdef DEBUG
 	Serial.begin(115200);
 	delay(1000);
+//#endif
 	DEBUG_PRINTLN(F(" "));
 	DEBUG_PRINTLN(F("V1.3.0 starting..."));
 	DEBUG_PRINTLN(F("Debug mode"));
+	DEBUG_MEMORY();
 	DEBUG_PRINTLN();
+
+	uint8_t mac[6] = { 0x00,0x01,0x02,0x03,0x04,0x05 };
+
+	mqttClient.setServer("192.168.0.3", 1883);
+	mqttClient.setCallback(mqttCallback);
+	Ethernet.begin(mac);
+	//sleep?
+	DEBUG_PRINTLN(Ethernet.localIP());
+
+	//modbus_configure(9600, 1, 0, TOTAL_REGS_SIZE, 0);
 
 	consumptionLimit = DEFAULT_CONSUMPTION_LIMIT;
 	initPins();
@@ -899,7 +937,18 @@ void setup()
 
 void loop()
 {
-	totalConsumption = cm.getConsumption();
+	DEBUG_MEMORY();
+	if (mqttClient.connected()) {
+		mqttClient.loop();
+		//mqttClient.publish("ehome/heating/commands/item_000001", "connect");
+	}
+	else {
+		mqttReconnect();
+	}
+
+	//holdingRegs[0] = modbus_update(holdingRegs);
+
+	totalConsumption = 1; //cm.getConsumption();
 	if ((int)(consumptionLimit - totalConsumption) < 0) { //If measured current consumption is above limit
 			if (elapsedSince(emergencyHandled) > 1000UL) {
 				DEBUG_PRINTLN(F("\n!!! EMERGENCY !!!"));
@@ -911,7 +960,7 @@ void loop()
 			return; //Emergency mode, take no more actions, restart the main loop
 	}
 	
-	processSerial();
+//processSerial();
 	
 	if (eepromDelayedWriteData.isWriteInitiated) {
 		if (elapsedSince(eepromDelayedWriteData.writeInitiatedTime) >= EEPROM_WRITE_DELAY_TIME) {
@@ -919,9 +968,11 @@ void loop()
 		}
 	}
 	
+	/*
 	if (serialReadBuffer.commandReceived) {
 		processCommand();
 	}
+	*/
 	
 	if (flagTimer2) {
 		MsTimer2::stop();
@@ -966,4 +1017,18 @@ void byteArrayToString(const byte* hex, uint8_t len, char* string) {
 		pos = pos + 2;
 	}
 	string[len * 2] = '\0';
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+
+}
+
+void mqttReconnect() {
+	DEBUG_PRINTLN(F("Connecting to MQTT server..."));
+	if (mqttClient.connect("Arduino")) {
+		DEBUG_PRINTLN(F("Connected"));
+	}
+	else {
+
+	}
 }

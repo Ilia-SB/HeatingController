@@ -9,15 +9,16 @@
 #ifndef SKETCH_H_
 #define SKETCH_H_
 
-#define DEBUG
+//#define DEBUG
 
 #include "Arduino.h"
 #include "EEPROMAnything.h"
 #include "EEPROM.h"
+#include <avr/pgmspace.h>
 //#include "avr/eeprom.h"
 #include "config.h"
-#include "CommBuffer.h"
-#include "ConsumptionMeter.h"
+//#include "CommBuffer.h"
+//#include "ConsumptionMeter.h"
 #include "PinReadWrite.h"
 #include "OneWire.h"
 #include "HeaterItem.h"
@@ -25,12 +26,12 @@
 #include "MsTimer2.h"
 #include "Interface.h"
 #include "DebugPrint.h"
+#include <SPI.h>
 #include <Ethernet.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#ifdef DEBUG
-    #include "MemoryFree.h"
-#endif
+//#include "SimpleModbusSlave.h"
+#include "MemoryFree.h"
 
 void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount);
 void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount);
@@ -55,16 +56,19 @@ void eepromReadHeater(uint8_t heaterNumber);
 bool arraysEqual(byte *array1, byte *array2);
 void printAddress(const byte *address, const uint8_t len);
 void initHeaters();
-void makeCommand(byte command, const byte* address, byte* data, int dataLen, byte* comBuffer, byte* comBufferLen);
+//void makeCommand(byte command, const byte* address, byte* data, int dataLen, byte* comBuffer, byte* comBufferLen);
 void validateHeater(uint8_t heaterNumber);
 void initPins(void);
 unsigned long elapsedSince(unsigned long);
 void listHeaters(HeaterItem **array, int size);
 void stringToByteArray(const char* string, uint8_t len, byte* hex);
 void byteArrayToString(const byte* hex, uint8_t len, char* string);
-
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+void mqttReconnect(void);
+/*
 void reportTemp(HeaterItem *);
 void reportActualState(HeaterItem *);
+*/
 void reportTotalConsumption(void);
 
 #endif /* SKETCH_H_ */

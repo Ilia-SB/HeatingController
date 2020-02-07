@@ -12,6 +12,7 @@
 #include "Arduino.h"
 
 #define ADDR_LEN 3
+#define SENSOR_ADDR_LEN	6
 
 class HeaterItem
 {
