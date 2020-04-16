@@ -8,13 +8,11 @@
 
 #include "Sketch.h"
 
-const char PROGMEM MQTT_COMMAND_TOPIC[] = {"ehome/heating/commands"}; //22
-const char PROGMEM MQTT_STATUSES_TOPIC[] = { "ehome/heating/statuses" }; //22
-const char PROGMEM TOTAL_CONSUMPTION[] = { "total_consumption" };
+const char MQTT_COMMAND_TOPIC[] = {"ehome/heating/commands/+"}; //24+1
+const char MQTT_STATUSES_TOPIC[] = { "ehome/heating/statuses" }; //22+1
 
 OneWire  ds(SENSOR);
 //CommBuffer serialReadBuffer(COMMAND_BUFFER_LEN);
-byte type_s = 0; /*sensor type. Hack to be able to use copypasted code*/
 HeaterItem heaterItems[NUMBER_OF_HEATERS];
 
 //byte connectedSensors[NUMBER_OF_HEATERS][8]; /*holds addresses of connected sensors*/
@@ -23,21 +21,24 @@ HeaterItem heaterItems[NUMBER_OF_HEATERS];
 //byte unconfiguredSensorCount = 0; /*Number of disconnected sensors*/
 //byte configuredItemsCount = 0;
 
-uint16_t consumptionLimit;
-uint16_t totalConsumption;
-float hysteresis;
+uint16_t consumptionLimit = 0;
+uint16_t totalConsumption = 0;
+float hysteresis = 0;
 
 //float temperatures[NUMBER_OF_HEATERS] = {0}; /*holds readings from all sensors*/
 	
-volatile boolean flagTimer1 = false;
-volatile boolean flagTimer2 = false;
 volatile boolean mode = MODE_HEATER_ON;
 
 boolean flagEmergency = false;
 unsigned long emergencyHandled;
+unsigned long sensorsReadStarted;
+unsigned long lastProcessed;
+unsigned long processingInterval = PROCESSING_INTERVAL;
+bool flagProcessing = false;
+bool flagReadingSensors = false;
 
 struct EepromDelayedWriteData {
-	boolean isWriteInitiated;
+	bool isWriteInitiated;
 	unsigned long writeInitiatedTime;
 	uint8_t heaterNumber;
 	uint8_t offset;
@@ -46,16 +47,16 @@ struct EepromDelayedWriteData {
 EthernetClient ethClient;
 PubSubClient mqttClient(ethClient);
 
+bool flagModbusPending = false;
 /*
-enum
-{
-	ADC0,
-	TOTAL_REGS_SIZE
-};
-unsigned int holdingRegs[TOTAL_REGS_SIZE];
+Modbus modbus(0, Serial, 0);
+uint8_t modbusState;
+uint32_t getConsumptionWait;
+modbus_t modbusRequest;
+uint32_t modbusResponse;
 */
 
-void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount) {
+static void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount) {
 	DEBUG_PRINT(F("heatersOff (")); DEBUG_PRINT(availablePower); DEBUG_PRINTLN(F(")"));
 	
 	/************************************************************************/
@@ -70,9 +71,6 @@ void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCou
 				manualHeaters[i]->actualState = false;
 				digitalLow(manualHeaters[i]->pin);
 				availablePower += manualHeaters[i]->powerConsumption;
-				
-					printAddress(manualHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F( " Manual heater ")); DEBUG_PRINT(manualHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (by request)."));
-				
 			}
 	}
 
@@ -80,19 +78,11 @@ void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCou
 	/* Auto heaters                                                         */
 	/************************************************************************/	
 	sortHeaters(autoHeaters, autoHeatersCount); //Sort by priority then by temperature
-	
-		DEBUG_PRINTLN(F("Processing auto heaters:"));
-		listHeaters(autoHeaters, autoHeatersCount);
-	
-
 	for (int i=0; i<autoHeatersCount; i++) { //Process auto heaters normally. Turn off if targetTemp reached.
 		if (!autoHeaters[i]->wantsOn) { //Needs to be turned off.
 			autoHeaters[i]->actualState = false;
 			digitalLow(autoHeaters[i]->pin);
 			availablePower += autoHeaters[i]->powerConsumption;
-			
-				printAddress(autoHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (targetTemp reached)."));
-			
 		}
 	}
 
@@ -106,7 +96,6 @@ void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCou
 				autoHeaters[i]->actualState = false;
 				digitalLow(autoHeaters[i]->pin);
 				availablePower += autoHeaters[i]->powerConsumption;
-				printAddress(autoHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (not enough power, EMERGENCY)."));
 			}
 		}
 	
@@ -115,16 +104,12 @@ void heatersOff(int availablePower, HeaterItem** autoHeaters, int autoHeatersCou
 				manualHeaters[i]->actualState = false;
 				digitalLow(manualHeaters[i]->pin);
 				availablePower += manualHeaters[i]->powerConsumption;
-
-			
-				printAddress(manualHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Manual heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to OFF (not enough power)."));
-			
 			}
 		}
 	}
 }
 
-void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount) {
+static void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCount, HeaterItem** manualHeaters, int manualHeatersCount) {
 
 	
 	DEBUG_PRINT(F("heatersOn (")); DEBUG_PRINT(availablePower); DEBUG_PRINTLN(F(")"));
@@ -138,23 +123,13 @@ void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCoun
 	/* Manual heaters                                                       */
 	/************************************************************************/
 	sortHeaters(manualHeaters, manualHeatersCount);
-	
-	DEBUG_PRINTLN(F("Processing manual heaters"));
-	listHeaters(manualHeaters, manualHeatersCount);
-	
-	
 	for (int i=0; i<manualHeatersCount; i++) {
 		if (manualHeaters[i]->wantsOn && !manualHeaters[i]->actualState) { //If needs to be turned on and is still not on
 			if (manualHeaters[i]->powerConsumption <= availablePower) { //Can be safely turned on
 				availablePower -= manualHeaters[i]->powerConsumption;
 				manualHeaters[i]->actualState = true;
 				digitalHigh(manualHeaters[i]->pin);
-				
-				printAddress(manualHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Manual heater ")); DEBUG_PRINT(manualHeaters[i]->port); DEBUG_PRINTLN(F(" set to ON (by request)."));
-				
 			} else { //Not enough power, no action
-				printAddress(manualHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Manual heater ")); DEBUG_PRINT(manualHeaters[i]->port); DEBUG_PRINTLN(F(" not set to ON (not enough power)."));
-				
 			}
 		}
 	}
@@ -163,23 +138,13 @@ void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCoun
 	/* Auto heaters                                                         */
 	/************************************************************************/	
 	sortHeaters(autoHeaters, autoHeatersCount);
-	
-	DEBUG_PRINTLN(F("Processing auto heaters."));
-	listHeaters(autoHeaters, autoHeatersCount);
-	
 	for (int i=0; i<autoHeatersCount; i++) {
 		if (autoHeaters[i]->wantsOn && !autoHeaters[i]->actualState) { //If needs to be turned on and is still not on
 			if (autoHeaters[i]->powerConsumption <= availablePower) { //Can be safely turned on
 				availablePower -= autoHeaters[i]->powerConsumption;
 				autoHeaters[i]->actualState = true;
 				digitalHigh(autoHeaters[i]->pin);
-				
-				printAddress(autoHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" set to ON."));
-				
 			} else { //Not enough power, no action
-			
-				printAddress(autoHeaters[i]->address, ADDR_LEN); DEBUG_PRINT(F(" Auto heater ")); DEBUG_PRINT(autoHeaters[i]->port); DEBUG_PRINTLN(F(" not set to ON (not enough power)."));
-				
 			}
 		}
 	}
@@ -189,12 +154,12 @@ void heatersOn(int availablePower, HeaterItem** autoHeaters, int autoHeatersCoun
 	/************************************************************************/
 	reportTotalConsumption();
 	for (int i=0; i<NUMBER_OF_HEATERS; i++) {
-		//reportTemp(&heaterItems[i]);
+		reportHeater(i);
 		//reportActualState(&heaterItems[i]);
 	}
 }
 
-void processHeaters(int currentConsumption, boolean mode) {
+static void processHeaters(int currentConsumption, boolean mode) {
 	
 	DEBUG_PRINTLN(F("==========")); DEBUG_PRINT(F("Current consumption: ")); DEBUG_PRINTLN(currentConsumption);
 	DEBUG_MEMORY();
@@ -237,15 +202,7 @@ void processHeaters(int currentConsumption, boolean mode) {
 	}
 }
 
-void timer1_ISR() {
-	flagTimer1 = true;
-}
-
-void timer2_ISR() {
-	flagTimer2 = true;
-}
-
-void sortHeaters(HeaterItem **array, int size) {
+static void sortHeaters(HeaterItem **array, int size) {
 	int jump = size;
 	bool swapped = true;
 	HeaterItem *tmp;
@@ -264,123 +221,92 @@ void sortHeaters(HeaterItem **array, int size) {
 	}
 }
 
-/*
-void processSerial()
-{
-	while(Serial.available())
-	{
-		int c = Serial.read();
-		serialReadBuffer.addChar(c);
-	}
-}
-*/
+//static void detectSensors() {
+//	uint64_t *unconnected[NUMBER_OF_HEATERS], *unconfigured[NUMBER_OF_HEATERS];
+//	uint64_t connectedSensors[8];
+//	uint8_t connectedSensorCount = 0, unconfiguredCount = 0, unconnectedCount = 0;
+//	uint8_t addr[SENSOR_ADDR_LEN];
+//	ds.reset_search();
+//	while (ds.search(addr)) {
+//		/*
+//		if (OneWire::crc8(addr, 7) != addr[7]) { //Check CRC
+//			DEBUG_PRINTLN(F("CRC is not valid!"));
+//			connectedSensorCount = 0;
+//			for (uint8_t i = 0;i < NUMBER_OF_HEATERS;i++) {
+//				heaterItems[i].isConnected = false;
+//			}
+//			return;
+//		}
+//		*/
+//
+//		memcpy(&connectedSensors[connectedSensorCount], addr, 8);
+//		connectedSensorCount++;
+//	}
+//
+//	for (uint8_t i = 0;i < connectedSensorCount;i++) {
+//		bool configured = false;
+//		for (uint8_t j = 0;j < NUMBER_OF_HEATERS;j++) {
+//			if (connectedSensors[i] == heaterItems[j].sensorAddress) {
+//				heaterItems[j].isConnected = true;
+//				configured = true;
+//				break;
+//			}
+//		}
+//		if (!configured) {
+//			unconfigured[unconfiguredCount] = &connectedSensors[i];
+//			unconfiguredCount++;
+//		}
+//	}
+//
+//	for (uint8_t i = 0; i < NUMBER_OF_HEATERS; i++) {
+//		bool connected = false;
+//		for (uint8_t j = 0;j < connectedSensorCount; j++) {
+//			if (heaterItems[i].sensorAddress == connectedSensors[j]) {
+//				connected = true;
+//				break;
+//			}
+//		}
+//		if (!connected) {
+//			heaterItems[i].isConnected = false;
+//			unconnected[unconnectedCount] = &heaterItems[i].sensorAddress;
+//			unconnectedCount++;
+//		}
+//	}
+//}
 
-void detectSensors() {
-	DEBUG_PRINTLN(F("Detecting sensors..."));
-	DEBUG_MEMORY();
-	byte *unconnected[NUMBER_OF_HEATERS], *unconfigured[NUMBER_OF_HEATERS];
-	byte addr[8];
-	byte connectedSensors[NUMBER_OF_HEATERS][8];
-
-	uint8_t connectedSensorCount = 0, unconfiguredCount = 0, unconnectedCount = 0;
-	
-	ds.reset_search();
-	while (ds.search(addr)) {
-		if (OneWire::crc8(addr, 7) != addr[7]) { /*Check CRC*/
-			DEBUG_PRINTLN(F("CRC is not valid!"));
-			connectedSensorCount = 0;
-			for (uint8_t i = 0;i < NUMBER_OF_HEATERS;i++) {
-				heaterItems[i].isConnected = false;
-			}
-			return;
-		}
-
-		memcpy(connectedSensors[connectedSensorCount], addr, 8);
-		DEBUG_PRINT(F(" ")); DEBUG_PRINT(connectedSensorCount); DEBUG_PRINT(F(": "));
-		printAddress(connectedSensors[connectedSensorCount],  6);DEBUG_PRINTLN();
-		connectedSensorCount++;
-	}
-
-	DEBUG_PRINTLN();DEBUG_PRINTLN(F("Unconfigured sensors:"));
-	for (uint8_t i = 0;i < connectedSensorCount;i++) {
-		bool configured = false;
-		for (uint8_t j = 0;j < NUMBER_OF_HEATERS;j++) {
-			if (arraysEqual(connectedSensors[i], heaterItems[j].sensorAddress)) {
-				heaterItems[j].isConnected = true;
-				configured = true;
-				break;
-			}
-		}
-		if (!configured) {
-			unconfigured[unconfiguredCount] = connectedSensors[i];
-			unconfiguredCount++;
-			printAddress(connectedSensors[i]+1, 6);DEBUG_PRINTLN();
-		}
-	}
-
-	DEBUG_PRINTLN();DEBUG_PRINTLN(F("Configured but not connected sensors:"));
-	for (uint8_t i = 0; i < NUMBER_OF_HEATERS; i++) {
-		bool connected = false;
-		for (uint8_t j = 0;j < connectedSensorCount; j++) {
-			if (arraysEqual(heaterItems[i].sensorAddress, connectedSensors[j])) {
-				connected = true;
-				break;
-			}
-		}
-		if (!connected) {
-			heaterItems[i].isConnected = false;
-			unconnected[unconnectedCount] = heaterItems[i].sensorAddress;
-			unconnectedCount++;
-			printAddress(heaterItems[i].sensorAddress+1, 6);DEBUG_PRINTLN();
-		}
-	}
-	DEBUG_MEMORY();
-	DEBUG_PRINTLN(F("Detection finished"));
-}
-
-void startSensor(byte *addr) {
+static void startSensor(uint64_t *addr) {
 		ds.reset();
-		ds.select(addr);
+		ds.select((uint8_t *)addr);
 		ds.write(0x44, 0);        // start conversion, with parasite power off at the end	
 }
 
-float readSensor(byte *addr) {
+static float readSensor(uint64_t *addr) {
 		float celsius = 0;
 		byte data[9] = {0};
 		//delay(1000);     // maybe 750ms is enough, maybe not
 		// we might do a ds.depower() here, but the reset will take care of it.
 		
 		ds.reset();
-		ds.select(addr);
+		ds.select((uint8_t*)addr);
 		ds.write(0xBE);         // Read Scratchpad
 
 		for (int i = 0; i < 9; i++) {           // we need 9 bytes
 			data[i] = ds.read();
 		}
+
+		/*
 		if (OneWire::crc8(data, 8) != data[8])
 		{
 			return CRC_ERROR;
 		}
+		*/
 
 		// Convert the data to actual temperature
 		// because the result is a 16 bit signed integer, it should
 		// be stored to an "int16_t" type, which is always 16 bits
 		// even when compiled on a 32 bit processor.
 		int16_t raw = (data[1] << 8) | data[0];
-		if (type_s) {
-			raw = raw << 3; // 9 bit resolution default
-			if (data[7] == 0x10) {
-				// "count remain" gives full 12 bit resolution
-				raw = (raw & 0xFFF0) + 12 - data[6];
-			}
-			} else {
-			byte cfg = (data[4] & 0x60);
-			// at lower res, the low bits are undefined, so let's zero them
-			if (cfg == 0x00) raw = raw & ~7;  // 9 bit resolution, 93.75 ms
-			else if (cfg == 0x20) raw = raw & ~3; // 10 bit res, 187.5 ms
-			else if (cfg == 0x40) raw = raw & ~1; // 11 bit res, 375 ms
-			//// default is 12 bit resolution, 750 ms conversion time
-		}
+		
 		celsius = (float)raw / 16.0;
 		
 		if (celsius == 85) {
@@ -390,31 +316,82 @@ float readSensor(byte *addr) {
 		return celsius;
 }
 
-void startSensorsRead() {
+static void startSensorsRead() {
 	for (int i=0; i<NUMBER_OF_HEATERS; i++) { //Start measurement on all sensors
 		if (heaterItems[i].isConnected) {
-			startSensor(heaterItems[i].sensorAddress);
+			startSensor(&heaterItems[i].sensorAddress);
 		}
 	}
 }
 
-void endSensorsRead() {
+static void endSensorsRead() {
 	for (int i=0; i<NUMBER_OF_HEATERS; i++) { //Read results
 		if (heaterItems[i].isEnabled && heaterItems[i].isConnected) {
-			float temp = readSensor(heaterItems[i].sensorAddress);
+			float temp = readSensor(&heaterItems[i].sensorAddress);
 			if (temp < CRC_ERROR) {
 				heaterItems[i].setTemperature(temp);
 			} else {
-				byte respBuffer[7], respLen = 0;
 				//makeCommand(TEMPREADERROR, heaterItems[i].address, NULL, 0, respBuffer, &respLen);
-				Serial.write(respBuffer, respLen);
-				Serial.print(1,DEC);
 			}
 		}
 	}
 }
 
-void processCommand() {
+static void processCommand(uint8_t heaterNumber, byte* payload, unsigned int  len) {
+	//TODO: save settings
+	StaticJsonDocument<246> json;//246
+	DeserializationError err = deserializeJson(json, payload);
+	if (err) {
+		reportItem(heaterNumber, INCORRECT_JSON);
+	}
+	if (json.containsKey(MQTT_TARGETTEMP)) {
+		heaterItems[heaterNumber].setTargetTemperature(json[MQTT_TARGETTEMP]);
+		eepromDelayedWrite(heaterNumber, TARGET_TEMP);
+		reportItem(heaterNumber, TARGET_TEMP);
+	}
+	if (json.containsKey(MQTT_PRIORITY)) {
+		heaterItems[heaterNumber].priority = json[MQTT_PRIORITY];
+		eepromDelayedWrite(heaterNumber, PRIORITY);
+		reportItem(heaterNumber, PRIORITY);
+	}
+	if (json.containsKey(MQTT_AUTO)) {
+		heaterItems[heaterNumber].isAuto = json[MQTT_AUTO];
+		eepromDelayedWrite(heaterNumber, IS_AUTO);
+		reportItem(heaterNumber, IS_AUTO);
+	}
+	if (json.containsKey(MQTT_ON_OFF)) {
+		heaterItems[heaterNumber].isOn = json[MQTT_ON_OFF];
+		eepromDelayedWrite(heaterNumber, IS_ON);
+		reportItem(heaterNumber, IS_ON);
+	}
+	if (json.containsKey(MQTT_SENSOR)) {
+		heaterItems[heaterNumber].sensorAddress = json[MQTT_SENSOR];
+		eepromDelayedWrite(heaterNumber, SENSOR);
+		reportItem(heaterNumber, SENSOR_ADDRESS);
+	}
+	if (json.containsKey(MQTT_PORT)) {
+		heaterItems[heaterNumber].port = json[MQTT_PORT];
+		eepromDelayedWrite(heaterNumber, PORT);
+		reportItem(heaterNumber, PORT);
+	}
+	if (json.containsKey(MQTT_ADJUST)) {
+		heaterItems[heaterNumber].setTemperatureAdjust(json[MQTT_ADJUST]);
+		eepromDelayedWrite(heaterNumber, TEMP_ADJUST);
+		reportItem(heaterNumber, TEMP_ADJUST);
+	}
+	if (json.containsKey(MQTT_ENABLED)) {
+		heaterItems[heaterNumber].isEnabled = json[MQTT_ENABLED];
+		eepromDelayedWrite(heaterNumber, IS_ENABLED);
+		reportItem(heaterNumber, IS_ENABLED);
+	}
+	if (json.containsKey(MQTT_CONSUMPTION)) {
+		heaterItems[heaterNumber].powerConsumption = json[MQTT_CONSUMPTION];
+		eepromDelayedWrite(heaterNumber, CONSUMPTION);
+		reportItem(heaterNumber, CONSUMPTION);
+	}
+	if (json.containsKey(MQTT_GETSTATE)) {
+		reportHeater(heaterNumber);
+	}
 	/*
 	byte command[15];
 	int commandLen=15;
@@ -593,7 +570,8 @@ bool commandIsValid(byte *command, int len) {
 }
 */
 
-byte calculateCRC(byte *command, int len) {
+/*
+static byte calculateCRC(byte *command, int len) {
 	uint8_t crc = 0;
 	for (int i=0; i<len; i++) { //loop through all bytes but last
 		crc += command[i];
@@ -601,50 +579,35 @@ byte calculateCRC(byte *command, int len) {
 	crc &= 0xF7;
 	return crc;
 }
+*/
 
-void eepromWriteHeater(uint8_t i){
+static void eepromWriteHeater(uint8_t i){
 	uint8_t *baseAddress = (uint8_t*)(i*HEATER_RECORD_LEN);
 	
-	for (uint8_t j=0; j<8; j++) { //sensorAddress
-		eeprom_update_byte((uint8_t*)(SENSOR_ADDRESS + baseAddress + j), heaterItems[i].sensorAddress[j]);
-	}
+	eeprom_update_block(&heaterItems[i].sensorAddress, SENSOR_ADDRESS + baseAddress, 8);
 	eeprom_update_byte(IS_ENABLED + baseAddress, (byte)heaterItems[i].isEnabled);
 	eeprom_update_byte(PORT + baseAddress, heaterItems[i].port);
 	eeprom_update_byte(IS_AUTO + baseAddress, heaterItems[i].isAuto);
 	eeprom_update_byte(IS_ON + baseAddress, heaterItems[i].isOn);
 	eeprom_update_byte(PRIORITY + baseAddress, heaterItems[i].priority);
 	float t = heaterItems[i].getTargetTemperature();
-	for (uint8_t j=0; j<4; j++) {
-		eeprom_update_byte(TARGET_TEMP + baseAddress + j, *((byte*)(&t + j)));
-	}
+	eeprom_update_block(TARGET_TEMP + baseAddress, &t, 4);
 	t = heaterItems[i].getTemperatureAdjust();
-	for (uint8_t j=0; j<4; j++) {
-		eeprom_update_byte(TEMP_ADJUST + baseAddress + j, *((byte*)(&t + j)));
-	}
+	eeprom_update_block(TEMP_ADJUST + baseAddress, &t, 4);
 	uint16_t c = heaterItems[i].powerConsumption;
-	for (uint8_t j=0; j<2; j++) {
-		eeprom_update_byte(CONSUMPTION + baseAddress + j, *((byte*)(&c + j)));
-	}
-	
-	
+	eeprom_update_block(CONSUMPTION + baseAddress, &c, 2);
 }
 
-void eepromDelayedWrite(uint8_t heaterNumber, uint8_t offset) {
-	DEBUG_PRINTLN ("eepromDelayedWrite");
-	DEBUG_PRINT("  Heater ");DEBUG_PRINT(heaterNumber);DEBUG_PRINT(", offset");DEBUG_PRINTLN(offset);
+static void eepromDelayedWrite(uint8_t heaterNumber, uint8_t offset) {
 	if(!eepromDelayedWriteData.isWriteInitiated) { //no write has been initiated previously. Schedule a new one
-		DEBUG_PRINTLN("    New write scheduled");
 		eepromDelayedWriteData.isWriteInitiated = true;
 		eepromDelayedWriteData.writeInitiatedTime = millis();
 		eepromDelayedWriteData.heaterNumber = heaterNumber;
 		eepromDelayedWriteData.offset = offset;
 	} else { // there is a write pending
-		DEBUG_PRINTLN("    Write pending");
 		if (eepromDelayedWriteData.heaterNumber == heaterNumber && eepromDelayedWriteData.offset == offset) { //same heater and same offset. Reschedule write
-			DEBUG_PRINTLN("      Rescheduling");
 			eepromDelayedWriteData.writeInitiatedTime = millis();
 		} else { //another heater or offset. Write the current data and schedule the new write
-			DEBUG_PRINTLN("      Flushing and scheduling a new one");
 			eepromWriteItem(eepromDelayedWriteData.heaterNumber, eepromDelayedWriteData.offset);
 			eepromDelayedWriteData.isWriteInitiated = true;
 			eepromDelayedWriteData.writeInitiatedTime = millis();
@@ -654,19 +617,17 @@ void eepromDelayedWrite(uint8_t heaterNumber, uint8_t offset) {
 	}
 }
 
-void eepromWriteItem(uint8_t heaterNumber, uint8_t offset) {
-	DEBUG_PRINTLN("eepromWriteItem");
-	DEBUG_PRINT("  Heater ");DEBUG_PRINT(heaterNumber);DEBUG_PRINT(", offset ");DEBUG_PRINTLN(offset);
+static void eepromWriteItem(uint8_t heaterNumber, uint8_t offset) {
 	uint8_t *baseAddress = (uint8_t*)(heaterNumber*HEATER_RECORD_LEN);
-	float t;
-	uint16_t c;
-	uint8_t arr[8];
 	boolean flagWriteError = false;
+	float t, temp;
+	uint16_t c, cons;
+	uint64_t addr;
 	switch(offset) {
 		case SENSOR_ADDRESS:
-			eeprom_update_block(heaterItems[heaterNumber].sensorAddress, SENSOR_ADDRESS + baseAddress, 8);
-			eeprom_read_block(arr, SENSOR_ADDRESS + baseAddress, 8);
-			if (!arraysEqual(arr, heaterItems[heaterNumber].sensorAddress)) {
+			eeprom_update_block(&heaterItems[heaterNumber].sensorAddress, SENSOR_ADDRESS + baseAddress, 8);
+			eeprom_read_block(&addr, SENSOR_ADDRESS + baseAddress, 8);
+			if (addr != heaterItems[heaterNumber].sensorAddress) {
 				flagWriteError = true;
 			}
 			break;
@@ -703,43 +664,38 @@ void eepromWriteItem(uint8_t heaterNumber, uint8_t offset) {
 		case TARGET_TEMP:
 			t = heaterItems[heaterNumber].getTargetTemperature();
 			eeprom_update_block(&t, TARGET_TEMP + baseAddress, 4);
-			eeprom_read_block(arr, TARGET_TEMP + baseAddress, 4);
-			if (!arraysEqual(arr, (byte*)&t)) {
+			eeprom_read_block(&temp, TARGET_TEMP + baseAddress, 4);
+			if (t != temp) {
 				flagWriteError = true;
 			}
 			break;
 		case TEMP_ADJUST:
 			t = heaterItems[heaterNumber].getTemperatureAdjust();
 			eeprom_update_block(&t, TEMP_ADJUST + baseAddress, 4);
-			eeprom_read_block(arr, TEMP_ADJUST + baseAddress, 4);
-			if (!arraysEqual(arr, (byte*)&t)) {
+			eeprom_read_block(&temp, TEMP_ADJUST + baseAddress, 4);
+			if (t != temp) {
 				flagWriteError = true;
 			}
 			break;
 		case CONSUMPTION:
 			c = heaterItems[heaterNumber].powerConsumption;
 			eeprom_update_block(&c, CONSUMPTION + baseAddress, 2);
-			eeprom_read_block(arr, CONSUMPTION + baseAddress, 2);
-			if (!arraysEqual(arr, (byte*)&c)) {
+			eeprom_read_block(&cons, CONSUMPTION + baseAddress, 2);
+			if (c != cons) {
 				flagWriteError = true;
 			}
 		default:
 			break;
 	}
 	if (flagWriteError) {
-		DEBUG_PRINTLN("Write error!!!!!!!");
-		byte comBuffer[6], comBufferLen = 0;
-		//makeCommand(EEPROMERROR, heaterItems[heaterNumber].address, NULL, 0, comBuffer, &comBufferLen);
-		Serial.write(comBuffer, comBufferLen);
-	} else {
-		DEBUG_PRINTLN("Write successful.");
+		//TODO report error
 	}
 	eepromDelayedWriteData.isWriteInitiated = false; //Write complete. Unschedule.
 }
 
-void eepromReadHeater(uint8_t heaterNumber) {
+static void eepromReadHeater(uint8_t heaterNumber) {
 	uint8_t *baseAddress = (uint8_t *)(heaterNumber*HEATER_RECORD_LEN);
-	eeprom_read_block(heaterItems[heaterNumber].sensorAddress, baseAddress + SENSOR_ADDRESS, 8);
+	eeprom_read_block(&heaterItems[heaterNumber].sensorAddress, baseAddress + SENSOR_ADDRESS, 8);
 	heaterItems[heaterNumber].isEnabled = eeprom_read_byte(baseAddress + IS_ENABLED);
 	heaterItems[heaterNumber].port = eeprom_read_byte(baseAddress + PORT);
 	heaterItems[heaterNumber].pin = pins[heaterItems[heaterNumber].port - 1];
@@ -756,27 +712,8 @@ void eepromReadHeater(uint8_t heaterNumber) {
 	heaterItems[heaterNumber].powerConsumption = c;
 }
 
-bool arraysEqual(byte *array1, byte *array2) {
-	if (sizeof(array1) != sizeof(array2)) {
-		return false;
-	}
-	for (uint8_t i=0; i<sizeof(array1); i++) {
-		if (array1[i] != array2[i]) {
-			return false;
-		}
-	}
-	return true;
-}
-
-void printAddress(const byte* address, const uint8_t len) {
-#ifdef DEBUG
-	char buff[13];
-	byteArrayToString(address, len, buff);
-	DEBUG_PRINT(buff);
-#endif
-}
-
-void initHeaters() {
+static void initHeaters() {
+	/*
 	heaterItems[0].address = HEATER1;
 	heaterItems[1].address = HEATER2;
 	heaterItems[2].address = HEATER3;
@@ -787,6 +724,7 @@ void initHeaters() {
 	heaterItems[7].address = HEATER8;
 	heaterItems[8].address = HEATER9;
 	heaterItems[9].address = HEATER10;
+	*/
 
 	for (uint8_t i=0; i<NUMBER_OF_HEATERS; i++) {
 		eepromReadHeater(i);
@@ -803,7 +741,7 @@ void initHeaters() {
 
 }
 
-void validateHeater(uint8_t heaterNumber) {
+static void validateHeater(uint8_t heaterNumber) {
 	heaterItems[heaterNumber].actualState = false;
 	heaterItems[heaterNumber].wantsOn = false;
 // 	
@@ -822,22 +760,6 @@ void validateHeater(uint8_t heaterNumber) {
 	}
 }
 
-void listHeaters(HeaterItem **array, int size) {
-
-	for (int i=0; i<size; i++) {
-		printAddress(array[i]->address+1, 6); DEBUG_PRINT(F(": ")); DEBUG_PRINT(array[i]->priority); DEBUG_PRINT(F("   ")); DEBUG_PRINT(array[i]->getTemperature()); DEBUG_PRINT(F("   ")); DEBUG_PRINT(array[i]->getDelta()); DEBUG_PRINT(F(" "));
-		if (array[i]->actualState) {
-			DEBUG_PRINT(F("x"));
-		}
-		if (array[i]->wantsOn) {
-			DEBUG_PRINT(F("w"));
-		}
-		DEBUG_PRINT(F("\n"));
-	}
-	DEBUG_PRINTLN();
-
-}
-
 /*
 void makeCommand(byte command, const byte* address, byte* data, int dataLen, byte* comBuffer, byte* comBufferLen) {
 	comBuffer[0] = BEGINTRANSMISSION;
@@ -850,14 +772,14 @@ void makeCommand(byte command, const byte* address, byte* data, int dataLen, byt
 }
 */
 
-void initPins() {
+static void initPins() {
 	for (int i=0;i<NUMBER_OF_HEATERS;i++) {
 		pinAsOutput(pins[i]);
 		digitalLow(pins[i]);
 	}
 }
 
-unsigned long elapsedSince(unsigned long then) {
+static unsigned long elapsedSince(unsigned long then) {
 	unsigned long now = millis();
 	return (now - then);
 }
@@ -877,35 +799,101 @@ void reportActualState(HeaterItem *heater) {
 	Serial.write(respBuffer, respLen);
 }
 */
-void reportTotalConsumption() {
+static void reportTotalConsumption() {
 	StaticJsonDocument<38> json;
 	//Serial.println(MQTT_STATUSES_TOPIC);
 	char payload[50];
-	json[TOTAL_CONSUMPTION] = totalConsumption;
+	json[MQTT_TOTAL_CONSUMPTION] = totalConsumption;
 	serializeJson(json, payload);
 	mqttClient.publish(MQTT_STATUSES_TOPIC, payload);
-	Serial.println(payload);
+	//Serial.println(payload);
 	//Serial.println();Serial.print(F("!!! Free memory: "));Serial.print(freeMemory());Serial.println(F(" !!!"));Serial.println();
+}
+
+static void reportHeater(uint8_t heaterNumber) {
+	StaticJsonDocument<138> json;
+	char payload[128];
+	json[MQTT_SENSOR] = heaterItems[heaterNumber].sensorAddress;
+	json[MQTT_PORT] = heaterItems[heaterNumber].port;
+	json[MQTT_AUTO] = heaterItems[heaterNumber].isAuto;
+	json[MQTT_CONSUMPTION] = heaterItems[heaterNumber].powerConsumption;
+	json[MQTT_ON_OFF] = heaterItems[heaterNumber].isOn;
+	json[MQTT_PRIORITY] = heaterItems[heaterNumber].priority;
+	serializeJson(json, payload);
+	mqttClient.publish(MQTT_STATUSES_TOPIC, payload);
+	json.clear();
+	json[MQTT_IS_CONNECTED] = heaterItems[heaterNumber].isConnected;
+	json[MQTT_ACTUAL_STATE] = heaterItems[heaterNumber].actualState;
+	json[MQTT_TARGETTEMP] = heaterItems[heaterNumber].getTargetTemperature();
+	json[MQTT_TEMP] = heaterItems[heaterNumber].getTemperature();
+	json[MQTT_ADJUST] = heaterItems[heaterNumber].getTemperatureAdjust();
+	serializeJson(json, payload);
+	mqttClient.publish(MQTT_STATUSES_TOPIC, payload);
+}
+
+static void reportItem(uint8_t heaterNumber, uint8_t item) {
+	StaticJsonDocument<39> json;
+	char payload[30];
+	switch (item) {
+	case SENSOR_ADDRESS:
+		json[MQTT_SENSOR] = heaterItems[heaterNumber].sensorAddress;
+		break;
+	case IS_ENABLED:
+		json[MQTT_ENABLED] = heaterItems[heaterNumber].isEnabled;
+		break;
+	case PORT:
+		json[MQTT_PORT] = heaterItems[heaterNumber].port;
+		break;
+	case IS_AUTO:
+		json[MQTT_AUTO] = heaterItems[heaterNumber].isAuto;
+		break;
+	case IS_ON:
+		json[MQTT_ON_OFF] = heaterItems[heaterNumber].isOn;
+		break;
+	case PRIORITY:
+		json[MQTT_PRIORITY] = heaterItems[heaterNumber].priority;
+		break;
+	case TARGET_TEMP:
+		json[MQTT_TARGETTEMP] = heaterItems[heaterNumber].getTargetTemperature();
+		break;
+	case TEMP_ADJUST:
+		json[MQTT_ADJUST] = heaterItems[heaterNumber].getTemperatureAdjust();
+		break;
+	case CONSUMPTION:
+		json[MQTT_CONSUMPTION] = heaterItems[heaterNumber].powerConsumption;
+		break;
+	case ACTUAL_STATE:
+		json[MQTT_ACTUAL_STATE] = heaterItems[heaterNumber].actualState;
+		break;
+	case IS_CONNECTED:
+		json[MQTT_IS_CONNECTED] = heaterItems[heaterNumber].isConnected;
+		break;
+	case INCORRECT_JSON:
+		json[MQTT_ERROR] = F("Incorrect json");
+		break;
+	}
+	serializeJson(json, payload);
+	mqttClient.publish(MQTT_STATUSES_TOPIC, payload);
 }
 
 void setup()
 {
 	emergencyHandled = millis();
 	
-	Timer1.initialize(PROCESSING_INTERVAL);
-	Timer1.attachInterrupt(timer1_ISR);
-	Timer1.stop();
-	
-	MsTimer2::set(READ_SENSORS_DELAY, timer2_ISR);
-	MsTimer2::stop();
-	
+	lastProcessed = millis();
+	sensorsReadStarted = millis();
 	
 	eepromDelayedWriteData.isWriteInitiated = false;
 	eepromDelayedWriteData.writeInitiatedTime = millis();
 	eepromDelayedWriteData.offset = UNDEFINED;
 	eepromDelayedWriteData.offset = UNDEFINED;
 //#ifdef DEBUG
-	Serial.begin(115200);
+	Serial.begin(9600);
+	/*
+	modbus.start();
+	modbus.setTimeOut(1000);
+	modbusState = 1;
+	*/
 	delay(1000);
 //#endif
 	DEBUG_PRINTLN(F(" "));
@@ -915,11 +903,14 @@ void setup()
 	DEBUG_PRINTLN();
 
 	uint8_t mac[6] = { 0x00,0x01,0x02,0x03,0x04,0x05 };
+	IPAddress ip = { 192, 168, 0, 30 };
+	Ethernet.begin(mac, ip);
+	Serial.println(Ethernet.hardwareStatus());
+	delay(1000);
 
 	mqttClient.setServer("192.168.0.3", 1883);
 	mqttClient.setCallback(mqttCallback);
-	Ethernet.begin(mac);
-	//sleep?
+	mqttReconnect();
 	DEBUG_PRINTLN(Ethernet.localIP());
 
 	//modbus_configure(9600, 1, 0, TOTAL_REGS_SIZE, 0);
@@ -927,11 +918,10 @@ void setup()
 	consumptionLimit = DEFAULT_CONSUMPTION_LIMIT;
 	initPins();
 	initHeaters(); /*will assign heater addresses*/
-	detectSensors(); /*will populate connectedSensors*/
+	//detectSensors(); /*will populate connectedSensors*/
 	startSensorsRead(); /*will populate temperatures*/
 	delay(1000);
 	endSensorsRead();
-	Timer1.start();
 	DEBUG_MEMORY();
 }
 
@@ -946,9 +936,20 @@ void loop()
 		mqttReconnect();
 	}
 
-	//holdingRegs[0] = modbus_update(holdingRegs);
+	if (!flagModbusPending) { //If we are not waiting for reply, send a request
+		//Serial.write(MODBUS_REQUEST, 8);
+		//TODO: Remove previous line!
+		flagModbusPending = true;
+	}
+	else { //If we are waitingt for reply
+		if (Serial.available() >= 7) { //if reply is available
+			byte buff[7];
+			Serial.readBytes(buff, 7);
+			totalConsumption = buff[3] << 8 | buff[4];
+			flagModbusPending = false;
+		}
+	}
 
-	totalConsumption = 1; //cm.getConsumption();
 	if ((int)(consumptionLimit - totalConsumption) < 0) { //If measured current consumption is above limit
 			if (elapsedSince(emergencyHandled) > 1000UL) {
 				DEBUG_PRINTLN(F("\n!!! EMERGENCY !!!"));
@@ -960,48 +961,41 @@ void loop()
 			return; //Emergency mode, take no more actions, restart the main loop
 	}
 	
-//processSerial();
-	
 	if (eepromDelayedWriteData.isWriteInitiated) {
 		if (elapsedSince(eepromDelayedWriteData.writeInitiatedTime) >= EEPROM_WRITE_DELAY_TIME) {
 			eepromWriteItem(eepromDelayedWriteData.heaterNumber, eepromDelayedWriteData.offset);
 		}
 	}
 	
-	/*
-	if (serialReadBuffer.commandReceived) {
-		processCommand();
-	}
-	*/
-	
-	if (flagTimer2) {
-		MsTimer2::stop();
-		flagTimer2 = false;
+	if (elapsedSince(sensorsReadStarted) >= READ_SENSORS_DELAY && flagReadingSensors) {
 		endSensorsRead();
-		
+		flagReadingSensors = false;
 		DEBUG_PRINT(F("\nConsumption limit: ")); DEBUG_PRINTLN(consumptionLimit);
-		
 
 		processHeaters(totalConsumption, MODE_HEATER_OFF);
 		mode = MODE_HEATER_OFF;
-		Timer1.setPeriod(OFF_ON_DELAY); //Need time to measure decreased consumption (low consumption means long measurement time). 2s ~ 560 watts.
+		lastProcessed = millis(); //Need time to measure decreased consumption (low consumption means long measurement time). 2s ~ 560 watts.
+		processingInterval = OFF_ON_DELAY;
+		flagProcessing = false;
 	}
 	
-	if (flagTimer1) {
-		flagTimer1 = false;
-		
+	if (elapsedSince(lastProcessed) >= processingInterval && !flagProcessing) {
 		if (mode == MODE_HEATER_ON) { //In this mode we need to read temperatures and switch off some of the heaters based on readings
 			startSensorsRead();
-			MsTimer2::start();
+			sensorsReadStarted = millis();
+			flagProcessing = true;
+			flagReadingSensors = true;
 		} else { //In this mode we need to switch on some heaters based on readings (taken 2 seconds ago in previous branch)
 			processHeaters(totalConsumption, MODE_HEATER_ON);
 			mode = MODE_HEATER_ON;
-			Timer1.setPeriod(PROCESSING_INTERVAL);
+			lastProcessed = millis();
+			processingInterval = PROCESSING_INTERVAL;
+			flagProcessing = false;
 		}
 	}
 }
 
-void stringToByteArray(const char* string, uint8_t len, byte* hex) {
+static void stringToByteArray(const char* string, uint8_t len, byte* hex) {
 	if (len == 3) {
 		sscanf(string, "%2x%2x%2x", &hex[0], &hex[1], &hex[2]);
 	}
@@ -1010,7 +1004,7 @@ void stringToByteArray(const char* string, uint8_t len, byte* hex) {
 	}
 }
 
-void byteArrayToString(const byte* hex, uint8_t len, char* string) {
+static void byteArrayToString(const byte* hex, uint8_t len, char* string) {
 	char* pos = string;
 	for (uint8_t i = 0;i < len;i++) {
 		sprintf(pos, "%02X", hex[i]);
@@ -1019,16 +1013,28 @@ void byteArrayToString(const byte* hex, uint8_t len, char* string) {
 	string[len * 2] = '\0';
 }
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-
+static void mqttCallback(char* topic, byte* payload, unsigned int length) {
+	if (topic[strlen(topic) - 2] == '0') {
+		uint8_t heaterNumber = topic[strlen(topic) - 1] - 48;
+		if (heaterNumber >= 0 && heaterNumber <= NUMBER_OF_HEATERS - 1) {
+			processCommand(heaterNumber, payload, length);
+		}
+	}
 }
 
-void mqttReconnect() {
+static void mqttReconnect() {
+	//char buff[25 + 6]; //MQTT_COMMAND_TOPIC + AD DR ES
+	//memset(buff, '0', 25 + 6);
 	DEBUG_PRINTLN(F("Connecting to MQTT server..."));
 	if (mqttClient.connect("Arduino")) {
 		DEBUG_PRINTLN(F("Connected"));
-	}
-	else {
-
+		mqttClient.subscribe(MQTT_COMMAND_TOPIC);
+		/*
+		memcpy(buff, MQTT_COMMAND_TOPIC, 23); //Copy command topic without trailing '+'
+		for (uint8_t i = 0; i < NUMBER_OF_HEATERS; i++) {
+			buff[25 + 6 - 1] = (char)('0' + i);
+			mqttClient.subscribe(buff);
+		}
+		*/
 	}
 }

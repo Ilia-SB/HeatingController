@@ -17,11 +17,11 @@
 #define DEBUG_PRINTLN(x)		Serial.println (x)
 #define DEBUG_MEMORY()          Serial.println();Serial.print(F("!!! Free memory: "));Serial.print(freeMemory());Serial.println(F(" !!!"));Serial.println();
 #elif defined(MQTT_DEBUG)
-#define DEBUG_PRINT(x)          mqttClient.publish("ehome/heating/debug, x)
-#define DEBUG_PRINTDEC(x)       mqttClient.publish("ehome/heating/debug, x)
-#define DEBUG_PRINTHEX(x)       mqttClient.publish("ehome/heating/debug, x)
-#define DEBUG_PRINTLN(x)        mqttClient.publish("ehome/heating/debug, x)
-#define DEBUG_MEMORY()          mqttClient.publish("ehome/heating/debug, freeMemory()
+#define DEBUG_PRINT(x)          mqttClient.publish("ehome/heating/debug", x)
+#define DEBUG_PRINTDEC(x)       mqttClient.publish("ehome/heating/debug", x)
+#define DEBUG_PRINTHEX(x)       mqttClient.publish("ehome/heating/debug", x)
+#define DEBUG_PRINTLN(x)        mqttClient.publish("ehome/heating/debug", x)
+#define DEBUG_MEMORY()          mqttClient.publish("ehome/heating/debug", freeMemory()
 #else
 #define DEBUG_PRINT(x)
 #define DEBUG_PRINTDEC(x)
